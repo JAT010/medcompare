@@ -22,6 +22,10 @@ class EntityRecord(BaseModel):
     - ``page_title``: title of that page, when available.
     - ``extracted_at``: when the record was created (UTC).
     - ``context``: short surrounding text snippet for human verification.
+    - ``extraction_method``: how the value was found (``jsonld``,
+      ``semantic_html``, ``table``, ``list``, ``card``, ``heading``, ``text``).
+    - ``source_strength``: ``high`` / ``medium`` / ``low``.
+    - ``confidence``: 0..1 numeric confidence, when computed.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -30,6 +34,9 @@ class EntityRecord(BaseModel):
     page_title: str | None = None
     extracted_at: datetime = Field(default_factory=utc_now)
     context: str | None = None
+    extraction_method: str | None = None
+    source_strength: str | None = None
+    confidence: float | None = None
 
 
 class NamedEntity(EntityRecord):

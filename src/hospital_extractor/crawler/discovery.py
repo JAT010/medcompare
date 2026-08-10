@@ -9,24 +9,35 @@ prioritizes hospital-slug and city-scoped pages.
 
 from __future__ import annotations
 
+from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from xml.etree import ElementTree
 from xml.etree.ElementTree import ParseError as XmlParseError
 
 from bs4 import BeautifulSoup
 
+from hospital_extractor.crawler.candidates import SOURCE_SITEMAP, CandidatePage, dedupe_candidates
 from hospital_extractor.crawler.url_filter import UrlFilter, parse_robots_txt
 from hospital_extractor.utils.urls import is_same_domain, normalize_url, resolve_url
 
 __all__ = [
     "SitemapData",
+    "SitemapDiscoveryResult",
     "discover_seeds",
+    "discover_sitemap_candidates",
     "extract_internal_links",
     "hospital_slug_from_url",
     "parse_robots_txt",
     "parse_sitemap",
+    "scope_rank",
 ]
+
+SitemapFetcher = Callable[[str], Awaitable[bytes | None]]
+
+_DEFAULT_MAX_SITEMAPS = 50
+_DEFAULT_MAX_SITEMAP_DEPTH = 3
 
 
 @dataclass(frozen=True)
@@ -141,16 +152,89 @@ def discover_seeds(
     parsed = parse_sitemap(sitemap_content, base_url)
     eligible = [url for url in parsed.urls if url_filter is None or url_filter.is_allowed(url)]
     eligible = dedupe_urls(eligible)
-    return sorted(eligible, key=lambda url: (_seed_rank(url, hospital_slug, location), url))
+    return sorted(eligible, key=lambda url: (scope_rank(url, hospital_slug, location), url))
 
 
-def _seed_rank(url: str, hospital_slug: str | None, location: str | None) -> int:
+def scope_rank(url: str, hospital_slug: str | None, location: str | None) -> int:
+    """Order a URL by how directly it concerns the target hospital.
+
+    Rank 0: pages under the hospital slug (profile, contact, awards...).
+    Rank 1: location-scoped doctor listings (``/doctor/<speciality>-in-<location>``).
+    Rank 2: everything else on the site.
+    """
     path = urlsplit(url).path
     if hospital_slug and f"/{hospital_slug}" in path:
         return 0
     if location and "/doctor/" in path and f"-in-{location}" in path:
         return 1
     return 2
+
+
+@dataclass(frozen=True)
+class SitemapDiscoveryResult:
+    """Candidate pages and the sitemap documents they came from."""
+
+    candidates: list[CandidatePage]
+    sitemap_urls: tuple[str, ...]
+
+
+async def discover_sitemap_candidates(
+    fetcher: SitemapFetcher,
+    base_url: str,
+    *,
+    robots_sitemaps: tuple[str, ...] = (),
+    use_default_sitemap_fallback: bool = True,
+    max_sitemaps: int = _DEFAULT_MAX_SITEMAPS,
+    max_sitemap_depth: int = _DEFAULT_MAX_SITEMAP_DEPTH,
+) -> SitemapDiscoveryResult:
+    """Walk the sitemap tree and return candidate pages.
+
+    Starts from the sitemap URLs declared in ``robots.txt`` (``robots_sitemaps``);
+    when none are declared, falls back to ``/sitemap.xml``. Sitemap indexes
+    are followed to their children (bounded by ``max_sitemap_depth`` and
+    ``max_sitemaps``), and every URL in a urlset becomes a
+    :class:`CandidatePage` with ``source_of_discovery="sitemap"``.
+
+    ``fetcher`` returns the raw bytes of a sitemap document or ``None`` when
+    it could not be fetched (HTTP error, redirect loop, timeout). Malformed
+    XML and duplicate URLs are handled without aborting discovery.
+    """
+    pending = list(robots_sitemaps)
+    if use_default_sitemap_fallback and not pending:
+        pending.append(urljoin(base_url, "/sitemap.xml"))
+
+    queue: deque[tuple[str, int]] = deque((url, 0) for url in pending)
+    visited: set[str] = set()
+    candidates: list[CandidatePage] = []
+
+    while queue and len(visited) < max_sitemaps:
+        sitemap_url, depth = queue.popleft()
+        if sitemap_url in visited or depth > max_sitemap_depth:
+            continue
+        visited.add(sitemap_url)
+
+        content = await fetcher(sitemap_url)
+        if content is None:
+            continue
+        data = parse_sitemap(content.decode("utf-8", errors="replace"), base_url)
+
+        for child in data.child_sitemaps:
+            if child not in visited:
+                queue.append((child, depth + 1))
+        for url in data.urls:
+            candidates.append(
+                CandidatePage(
+                    url=url,
+                    source_of_discovery=SOURCE_SITEMAP,
+                    sitemap_name=sitemap_url,
+                    depth=0,
+                )
+            )
+
+    return SitemapDiscoveryResult(
+        candidates=dedupe_candidates(candidates),
+        sitemap_urls=tuple(sorted(visited)),
+    )
 
 
 def _local_name(tag: str) -> str:

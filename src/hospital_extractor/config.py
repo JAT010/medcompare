@@ -1,0 +1,63 @@
+"""Configuration for the extraction pipeline.
+
+Loaded from ``config/default.toml`` when present; every value has a sensible
+default so the pipeline runs with zero configuration. Extraction-specific
+limits (association thresholds, description truncation, FAQ answer filtering)
+live here rather than being scattered through extractors.
+"""
+
+from __future__ import annotations
+
+import tomllib
+from dataclasses import dataclass, fields
+from pathlib import Path
+from typing import Any
+
+__all__ = ["DEFAULT_CONFIG_PATH", "ExtractionConfig", "load_config"]
+
+DEFAULT_CONFIG_PATH = Path("config/default.toml")
+
+_ASSOCIATION_RANK = {"confirmed": 0, "probable": 1, "uncertain": 2, "not_associated": 3}
+
+
+@dataclass(frozen=True)
+class ExtractionConfig:
+    """Deterministic, conservative extraction settings."""
+
+    # Minimum association strength for a doctor to enter the target dataset.
+    # Doctors with a weaker association are excluded; uncertain ones are kept
+    # and flagged in the data-quality metadata.
+    doctor_association_include_min: str = "probable"
+    exclude_not_associated_doctors: bool = True
+    # FAQ answers shorter than this (after cleaning) are treated as boilerplate.
+    faq_min_answer_length: int = 20
+    # Description fields longer than this are truncated (avoids dumping pages).
+    description_max_length: int = 800
+    # Max characters of visible text scanned for capacity/contact facts.
+    text_scan_limit: int = 12000
+    # Report extraction warnings at or below this confidence.
+    low_confidence_threshold: float = 0.5
+
+
+def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> ExtractionConfig:
+    """Load extraction settings from a TOML file, falling back to defaults.
+
+    Unknown keys are ignored; missing keys keep their defaults. The file is
+    optional — the pipeline must run without it.
+    """
+    config_path = Path(path)
+    raw: dict[str, Any] = {}
+    if config_path.is_file():
+        with config_path.open("rb") as handle:
+            raw = tomllib.load(handle)
+        raw = raw.get("extraction", raw)
+    known = {field.name for field in fields(ExtractionConfig)}
+    values = {key: value for key, value in raw.items() if key in known}
+    return ExtractionConfig(**values)
+
+
+def association_rank(association: str | None) -> int:
+    """Rank an association state; unknown states rank lowest."""
+    if association is None:
+        return len(_ASSOCIATION_RANK)
+    return _ASSOCIATION_RANK.get(association, len(_ASSOCIATION_RANK))

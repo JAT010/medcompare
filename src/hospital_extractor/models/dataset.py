@@ -18,6 +18,7 @@ from hospital_extractor.models.insurance import InsuranceProvider
 from hospital_extractor.models.other import OtherInformation
 from hospital_extractor.models.procedure import Procedure
 from hospital_extractor.models.program import Program
+from hospital_extractor.models.quality import DataQuality
 from hospital_extractor.models.service import PatientService
 from hospital_extractor.models.source import SourceRecord
 from hospital_extractor.models.speciality import Speciality
@@ -74,3 +75,4 @@ class HospitalDataset(BaseModel):
     visiting_information: list[VisitingInformation] = Field(default_factory=list)
     other_information: list[OtherInformation] = Field(default_factory=list)
     sources: list[SourceRecord] = Field(default_factory=list)
+    quality: DataQuality = Field(default_factory=DataQuality)

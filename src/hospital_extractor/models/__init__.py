@@ -5,6 +5,7 @@ from __future__ import annotations
 from hospital_extractor.models.accreditation import Accreditation
 from hospital_extractor.models.award import Award
 from hospital_extractor.models.base import EntityRecord, NamedEntity
+from hospital_extractor.models.conflict import Conflict
 from hospital_extractor.models.contact import Contact
 from hospital_extractor.models.dataset import ENTITY_FIELDS, HospitalDataset
 from hospital_extractor.models.department import Department
@@ -17,6 +18,7 @@ from hospital_extractor.models.insurance import InsuranceProvider
 from hospital_extractor.models.other import OtherInformation
 from hospital_extractor.models.procedure import Procedure
 from hospital_extractor.models.program import Program
+from hospital_extractor.models.quality import DataQuality
 from hospital_extractor.models.service import PatientService
 from hospital_extractor.models.source import SourceRecord
 from hospital_extractor.models.speciality import Speciality
@@ -27,7 +29,9 @@ from hospital_extractor.models.visiting import VisitingInformation
 __all__ = [
     "Accreditation",
     "Award",
+    "Conflict",
     "Contact",
+    "DataQuality",
     "Department",
     "Doctor",
     "EmergencyService",

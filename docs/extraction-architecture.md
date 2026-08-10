@@ -156,10 +156,10 @@ warnings.
 1. ✅ `utils` + `models` + toolchain (done, 85 tests green)
 2. ✅ `crawler/discovery` + `url_filter` (sitemap/robots parsing, seeds) — fixture tests
 3. ✅ `crawler/crawler` + `storage/raw` (polite fetch, retry, cache) — fixture + mock transport tests
-4. `extraction/page_analyzer` + `jsonld` (page signals, structured data)
-5. Entity extractors (hospital → doctors → specialities → procedures → technology → services)
-6. `processing/*` (normalize, dedupe, validate)
-7. `schema/*` (canonical, discovery, mapper)
-8. `export/*` (JSON store, Excel, CSV)
-9. `config` + `cli` wiring
-10. Live integration test (Max Smart Saket) + cross-site smoke test
+4. ✅ `extraction/page_analyzer` + `jsonld` (page signals, structured data)
+5. ✅ Entity extractors (hospital → doctors → specialities → procedures → technology → services)
+6. ✅ `processing/*` (normalize, dedupe, validate)
+7. ✅ `schema/*` (canonical, discovery, mapper)
+8. ✅ `export/*` (JSON store, Excel, CSV)
+9. ✅ `config` + `cli` wiring
+10. ✅ Live integration test (Max Smart Saket) + cross-site smoke test — see `docs/recon-maxhealthcare-saket.md`

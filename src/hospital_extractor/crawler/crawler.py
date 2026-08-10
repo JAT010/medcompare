@@ -3,10 +3,15 @@
 Uses ``httpx`` with an injectable client so tests can supply a
 ``MockTransport``. Defaults are chosen to be safe on production hospital
 sites: a descriptive user-agent, bounded retries with exponential backoff,
-a minimum delay between requests and a hard page cap.
+a minimum delay between requests, a hard page cap and a response-size cap.
 
 A 403 response is treated as a hard stop signal (the recon report observed
 Akamai returning inconsistent 403s); it is never retried.
+
+The fetcher only downloads the HTML body it is asked for. Binary assets,
+stylesheets and scripts are never fetched by the normal page path; the
+content type of every response is recorded so callers can decide what to
+keep.
 """
 
 from __future__ import annotations
@@ -26,16 +31,32 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_RETRIES = 3
 DEFAULT_DELAY_SECONDS = 0.5
 DEFAULT_MAX_PAGES = 200
+DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024
+PROBE_BODY_LIMIT = 64 * 1024
 
 RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+# Content types we consider HTML-like page content.
+HTML_CONTENT_TYPES = frozenset(
+    {
+        "text/html",
+        "application/xhtml+xml",
+        "text/xml",
+        "application/xml",
+        "text/plain",
+    }
+)
 
 __all__ = [
     "CrawlError",
     "CrawlStoppedError",
     "Crawler",
-    "FetchedPage",
     "FetchError",
+    "FetchResult",
+    "FetchedPage",
+    "HTML_CONTENT_TYPES",
     "MaxPagesError",
+    "ProbeOutcome",
     "ProbeResult",
 ]
 
@@ -58,34 +79,76 @@ class CrawlStoppedError(CrawlError):
 
 @dataclass(frozen=True)
 class FetchedPage:
-    """One successfully fetched page.
+    """One fetched page.
 
     ``url`` is the normalized request URL, ``final_url`` the post-redirect
-    URL, and ``html`` the raw response body bytes.
+    URL, and ``html`` the raw response body bytes (possibly truncated).
     """
 
     url: str
     status_code: int
     html: bytes
     final_url: str
+    content_type: str | None = None
+    truncated: bool = False
+
+    @property
+    def is_html(self) -> bool:
+        """True when the response looks like HTML/text page content.
+
+        A missing content type is treated as HTML (many servers omit it).
+        """
+        if self.content_type is None:
+            return True
+        media_type = self.content_type.split(";", 1)[0].strip().lower()
+        return media_type in HTML_CONTENT_TYPES or media_type.startswith("text/")
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    """Raw outcome of one HTTP exchange (used by pages and sitemaps)."""
+
+    status_code: int
+    content: bytes
+    final_url: str
+    content_type: str | None = None
+    truncated: bool = False
+
+
+@dataclass(frozen=True)
+class ProbeOutcome:
+    """Access probe result for a single URL."""
+
+    url: str
+    status_code: int | None
+    final_url: str | None
+    content_type: str | None
 
 
 @dataclass(frozen=True)
 class ProbeResult:
     """Reachability probe of a hospital website before committing to a crawl."""
 
-    robots_status: int | None
-    homepage_status: int | None
+    robots: ProbeOutcome
+    homepage: ProbeOutcome
+
+    @property
+    def robots_status(self) -> int | None:
+        return self.robots.status_code
+
+    @property
+    def homepage_status(self) -> int | None:
+        return self.homepage.status_code
 
     @property
     def forbidden(self) -> bool:
         """True when either probe returned 403 (e.g. Akamai block)."""
-        return self.robots_status == 403 or self.homepage_status == 403
+        return self.robots.status_code == 403 or self.homepage.status_code == 403
 
     @property
     def reachable(self) -> bool:
         """True when the homepage responded without a hard 403 block."""
-        return self.homepage_status is not None and not self.forbidden
+        return self.homepage.status_code is not None and not self.forbidden
 
 
 class Crawler:
@@ -100,6 +163,7 @@ class Crawler:
         retry_statuses: frozenset[int] = RETRYABLE_STATUSES,
         delay: float = DEFAULT_DELAY_SECONDS,
         max_pages: int = DEFAULT_MAX_PAGES,
+        max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.user_agent = user_agent
@@ -108,6 +172,7 @@ class Crawler:
         self.retry_statuses = retry_statuses
         self.delay = delay
         self.max_pages = max_pages
+        self.max_response_bytes = max_response_bytes
         self._client = client or httpx.AsyncClient(
             headers={"User-Agent": user_agent},
             timeout=timeout,
@@ -119,20 +184,38 @@ class Crawler:
         self._last_request_at: float | None = None
 
     async def fetch(self, url: str) -> FetchedPage:
-        """Fetch one normalized URL, applying throttling and limits."""
+        """Fetch one normalized page URL, applying throttling and limits.
+
+        Counts against the page budget. Raises :class:`MaxPagesError` when
+        the budget is exhausted and :class:`CrawlStoppedError` after
+        :meth:`stop`.
+        """
         if self._stopped:
             raise CrawlStoppedError("crawl has been stopped")
         if self._pages_fetched >= self.max_pages:
             raise MaxPagesError(f"max_pages={self.max_pages} reached; not fetching {url!r}")
         await self._throttle()
-        response = await self._get_with_retries(url)
+        result = await self._get_with_retries(url)
         self._pages_fetched += 1
         return FetchedPage(
             url=url,
-            status_code=response.status_code,
-            html=response.content,
-            final_url=str(response.url),
+            status_code=result.status_code,
+            html=result.content,
+            final_url=result.final_url,
+            content_type=result.content_type,
+            truncated=result.truncated,
         )
+
+    async def fetch_resource(self, url: str) -> FetchResult:
+        """Fetch a non-page resource (sitemap, robots) without page accounting.
+
+        Throttled and retried like pages but does not consume the page
+        budget and does not enforce content-type expectations.
+        """
+        if self._stopped:
+            raise CrawlStoppedError("crawl has been stopped")
+        await self._throttle()
+        return await self._get_with_retries(url)
 
     async def crawl(self, urls: Iterable[str]) -> AsyncIterator[FetchedPage]:
         """Yield fetched pages for *urls*, stopping early on limits."""
@@ -149,15 +232,13 @@ class Crawler:
     async def probe(self, base_url: str) -> ProbeResult:
         """Check ``robots.txt`` and the homepage before crawling.
 
-        A 403 on either URL indicates a hard block; the caller should abort
-        with a clear error instead of starting a retry storm.
+        Captures status, effective URL and content type for each. A 403 on
+        either URL indicates a hard block; the caller should abort with a
+        clear error instead of starting a retry storm.
         """
-        robots_status = await self._status(urljoin(base_url, "/robots.txt"))
-        homepage_status = await self._status(base_url)
-        return ProbeResult(
-            robots_status=robots_status,
-            homepage_status=homepage_status,
-        )
+        robots = await self._probe_url(urljoin(base_url, "/robots.txt"))
+        homepage = await self._probe_url(base_url)
+        return ProbeResult(robots=robots, homepage=homepage)
 
     def stop(self) -> None:
         """Request a graceful stop after the in-flight request completes."""
@@ -172,34 +253,63 @@ class Crawler:
     def pages_fetched(self) -> int:
         return self._pages_fetched
 
-    async def _get_with_retries(self, url: str) -> httpx.Response:
+    async def _get_with_retries(self, url: str) -> FetchResult:
         last_error: httpx.HTTPError | None = None
         for attempt in range(self.retries + 1):
             if self._stopped:
                 raise CrawlStoppedError("crawl has been stopped")
             try:
-                response = await self._client.get(url)
+                result = await self._stream_once(url)
             except httpx.HTTPError as exc:
                 last_error = exc
                 if attempt < self.retries:
                     await self._backoff(attempt)
                     continue
                 break
-            if response.status_code in self.retry_statuses and attempt < self.retries:
+            if result.status_code in self.retry_statuses and attempt < self.retries:
                 await self._backoff(attempt)
                 continue
-            return response
+            return result
         raise FetchError(
             f"failed to fetch {url!r} after {self.retries} retries"
             + (f": {last_error!r}" if last_error is not None else "")
         ) from last_error
 
-    async def _status(self, url: str) -> int | None:
+    async def _stream_once(self, url: str, *, body_limit: int | None = None) -> FetchResult:
+        async with self._client.stream("GET", url) as response:
+            content, truncated = await self._read_body_limited(response, body_limit)
+        return FetchResult(
+            status_code=response.status_code,
+            content=content,
+            final_url=str(response.url),
+            content_type=response.headers.get("content-type"),
+            truncated=truncated,
+        )
+
+    async def _read_body_limited(
+        self, response: httpx.Response, body_limit: int | None = None
+    ) -> tuple[bytes, bool]:
+        limit = body_limit or self.max_response_bytes
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in response.aiter_bytes():
+            size += len(chunk)
+            if size > limit:
+                return b"".join(chunks), True
+            chunks.append(chunk)
+        return b"".join(chunks), False
+
+    async def _probe_url(self, url: str) -> ProbeOutcome:
         try:
-            response = await self._client.get(url)
+            result = await self._stream_once(url, body_limit=PROBE_BODY_LIMIT)
         except httpx.HTTPError:
-            return None
-        return response.status_code
+            return ProbeOutcome(url=url, status_code=None, final_url=None, content_type=None)
+        return ProbeOutcome(
+            url=url,
+            status_code=result.status_code,
+            final_url=result.final_url,
+            content_type=result.content_type,
+        )
 
     async def _throttle(self) -> None:
         if self._last_request_at is None:

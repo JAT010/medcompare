@@ -486,3 +486,105 @@ class TestCrawler:
             await client.aclose()
 
         _run(scenario())
+
+    def test_fetch_records_content_type(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, text="<html></html>", headers={"Content-Type": "text/html; charset=utf-8"}
+            )
+
+        crawler, client = _crawler_client(handler)
+
+        async def scenario() -> None:
+            page = await crawler.fetch("https://example.com/a")
+            assert page.content_type == "text/html; charset=utf-8"
+            assert page.is_html
+            await client.aclose()
+
+        _run(scenario())
+
+    def test_missing_content_type_treated_as_html(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=b"<html></html>")
+
+        crawler, client = _crawler_client(handler)
+
+        async def scenario() -> None:
+            page = await crawler.fetch("https://example.com/a")
+            assert page.content_type is None
+            assert page.is_html
+            await client.aclose()
+
+        _run(scenario())
+
+    def test_non_html_content_type_flag(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="{}", headers={"Content-Type": "application/json"})
+
+        crawler, client = _crawler_client(handler)
+
+        async def scenario() -> None:
+            page = await crawler.fetch("https://example.com/api")
+            assert not page.is_html
+            await client.aclose()
+
+        _run(scenario())
+
+    def test_fetch_resource_not_counted_against_page_budget(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="ok")
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True)
+        crawler = Crawler(client=client, max_pages=1, delay=0.0)
+
+        async def scenario() -> None:
+            resource = await crawler.fetch_resource("https://example.com/sitemap.xml")
+            assert resource.status_code == 200
+            assert resource.content == b"ok"
+            assert crawler.pages_fetched == 0
+
+            await crawler.fetch("https://example.com/a")
+            assert crawler.pages_fetched == 1
+
+            resource = await crawler.fetch_resource("https://example.com/robots.txt")
+            assert resource.status_code == 200
+            assert crawler.pages_fetched == 1
+
+            with pytest.raises(MaxPagesError):
+                await crawler.fetch("https://example.com/b")
+            await client.aclose()
+
+        _run(scenario())
+
+    def test_response_body_truncated_over_limit(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="a" * 1000)
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True)
+        crawler = Crawler(client=client, max_response_bytes=10, delay=0.0)
+
+        async def scenario() -> None:
+            page = await crawler.fetch("https://example.com/big")
+            assert page.truncated
+            assert len(page.html) < 1000
+            await client.aclose()
+
+        _run(scenario())
+
+    def test_probe_captures_content_type(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/robots.txt":
+                return httpx.Response(200, text="User-agent: *")
+            return httpx.Response(
+                200, text="<html></html>", headers={"Content-Type": "text/html; charset=utf-8"}
+            )
+
+        crawler, client = _crawler_client(handler)
+
+        async def scenario() -> None:
+            result = await crawler.probe("https://example.com/")
+            assert result.homepage.content_type == "text/html; charset=utf-8"
+            assert result.robots.final_url == "https://example.com/robots.txt"
+            await client.aclose()
+
+        _run(scenario())
