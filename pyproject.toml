@@ -5,22 +5,22 @@ description = "Universal hospital website intelligence extractor"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "beautifulsoup4>=...",
-    "httpx>=...",
-    "lxml>=...",
-    "openpyxl>=...",
-    "pandas>=...",
-    "playwright>=...",
-    "pydantic>=...",
-    "pydantic-settings>=...",
+    "beautifulsoup4>=4.15.0",
+    "httpx>=0.28.1",
+    "lxml>=6.1.1",
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.5",
+    "playwright>=1.62.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
 ]
 
 [dependency-groups]
 dev = [
-    "mypy>=...",
-    "pytest>=...",
-    "pytest-cov>=...",
-    "ruff>=...",
+    "mypy>=1.18.0",
+    "pytest>=8.4.0",
+    "pytest-cov>=6.2.0",
+    "ruff>=0.12.0",
 ]
 
 [build-system]
@@ -44,3 +44,4 @@ pythonpath = ["src"]
 [tool.mypy]
 python_version = "3.13"
 strict = true
+plugins = ["pydantic.mypy"]

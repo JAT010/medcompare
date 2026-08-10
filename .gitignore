@@ -1,0 +1,23 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python caches and tooling caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime data and logs (never commit scraping artifacts)
+data/
+logs/
+*.xlsx
+*.csv
+
+# Secrets and local config
+.env
+.env.*
