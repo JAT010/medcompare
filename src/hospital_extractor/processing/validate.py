@@ -8,6 +8,7 @@ target. Deduplication must run before final validation.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +28,30 @@ _PROVENANCE_FIELDS = frozenset(
         "source_strength",
         "confidence",
     }
+)
+
+# Generic listing/navigation/cookie labels that never name a real entity. A
+# record whose name equals one of these is page chrome, not extracted content.
+_REJECT_NAMES = frozenset(
+    {
+        "home", "about", "about us", "contact", "contact us", "reach us", "get in touch",
+        "faq", "frequently asked questions", "our doctors", "find a doctor", "doctors",
+        "our specialities", "our specialists", "specialities", "specialists", "treatments",
+        "conditions", "procedures", "services", "facilities", "departments", "news", "blog",
+        "career", "careers", "jobs", "book appointment", "book an appointment", "appointment",
+        "emergency", "ambulance", "insurance", "tpa", "cashless", "awards", "accreditations",
+        "reviews", "testimonials", "privacy policy", "terms of use", "terms and conditions",
+        "sitemap", "login", "sign in", "sign up", "register", "download", "read more",
+        "learn more", "know more", "view all", "our story", "press release", "media",
+        "gallery", "video", "cookie", "cookie policy", "search", "request a callback",
+        "quick links", "whatsapp", "call us", "email us", "visitors", "patient info",
+        "patients", "why choose us", "our team", "team", "book now", "enquire", "enquiry",
+        "subscribe", "newsletter", "health check", "wellness", "international patient",
+    }
+)
+
+_REJECT_NAME_RE = re.compile(
+    r"^(?:menu|skip to content|book now|request a callback)$", re.I
 )
 
 
@@ -74,6 +99,20 @@ def validate_records(category: CanonicalCategory, records: list[Any]) -> Validat
             result.issues.append(
                 ValidationIssue(
                     category.key, "error", "record has no meaningful fields", None, index
+                )
+            )
+            continue
+
+        name_value = data.get("name") or data.get("label")
+        if isinstance(name_value, str) and _is_rejected_name(name_value):
+            result.rejected.append(record)
+            result.issues.append(
+                ValidationIssue(
+                    category.key,
+                    "error",
+                    "record name is a generic navigation label",
+                    "name",
+                    index,
                 )
             )
             continue
@@ -144,6 +183,11 @@ def _meaningful_fields(data: dict[str, Any]) -> dict[str, Any]:
 def _has_name(data: dict[str, Any]) -> bool:
     name = data.get("name") or data.get("label")
     return isinstance(name, str) and bool(name.strip())
+
+
+def _is_rejected_name(name: str) -> bool:
+    lowered = name.strip().lower()
+    return lowered in _REJECT_NAMES or bool(_REJECT_NAME_RE.match(lowered))
 
 
 def _invalid_url(value: object) -> bool:

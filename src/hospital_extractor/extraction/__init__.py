@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hospital_extractor.extraction.engine import build_dataset
+from hospital_extractor.extraction.engine import CrawlStats, build_dataset
 from hospital_extractor.extraction.jsonld import (
     JsonLdBlock,
     JsonLdResult,
@@ -17,6 +17,7 @@ from hospital_extractor.extraction.page_analyzer import (
 
 __all__ = [
     "AnalyzedPage",
+    "CrawlStats",
     "FaqItem",
     "JsonLdBlock",
     "JsonLdResult",

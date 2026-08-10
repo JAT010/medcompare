@@ -49,9 +49,15 @@ class JsonLdBlock:
 
 @dataclass(frozen=True)
 class JsonLdResult:
-    """All JSON-LD blocks found on a page."""
+    """All JSON-LD blocks found on a page.
+
+    ``malformed`` counts ``<script type="application/ld+json">`` blocks that
+    could not be parsed. Malformed blocks are skipped by extraction, but the
+    count is preserved so the pipeline can raise an extraction warning.
+    """
 
     blocks: tuple[JsonLdBlock, ...] = ()
+    malformed: int = 0
 
     @property
     def types(self) -> frozenset[str]:
@@ -68,20 +74,22 @@ def extract_jsonld(html: str) -> JsonLdResult:
     Handles single objects, arrays of objects, and ``@graph`` documents
     (each graph node becomes its own block). Nodes without an ``@type`` are
     still returned so downstream code can inspect them. Malformed JSON is
-    skipped.
+    skipped and counted in :attr:`JsonLdResult.malformed`.
     """
     soup = BeautifulSoup(html, "lxml")
     blocks: list[JsonLdBlock] = []
+    malformed = 0
     for script in soup.find_all("script", type=_JSONLD_SCRIPT_TYPE):
         if not script.string:
             continue
         payload = _parse_json(script.string)
         if payload is None:
+            malformed += 1
             continue
         for node in _iter_nodes(payload):
             data = node if isinstance(node, dict) else {}
             blocks.append(JsonLdBlock(types=_node_types(data), data=data))
-    return JsonLdResult(blocks=tuple(blocks))
+    return JsonLdResult(blocks=tuple(blocks), malformed=malformed)
 
 
 def _parse_json(text: str) -> Any:

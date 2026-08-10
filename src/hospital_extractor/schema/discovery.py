@@ -108,6 +108,7 @@ def format_dataset_summary(dataset: HospitalDataset) -> str:
     """Render the CLI summary block for an extracted dataset."""
     lines: list[str] = ["Structured dataset:", ""]
     hospital = dataset.hospital
+    quality = dataset.quality
     if hospital is not None and hospital.name:
         lines.append("Hospital:")
         lines.append(f"  {hospital.name}")
@@ -122,6 +123,22 @@ def format_dataset_summary(dataset: HospitalDataset) -> str:
             lines.append(f"  {category.label}")
     lines.append("")
 
+    coverage = quality.category_coverage
+    if coverage:
+        lines.append("Category coverage:")
+        for category in CANONICAL_CATEGORIES:
+            status = coverage.get(category.label)
+            if status is not None:
+                lines.append(f"  {category.label}: {status}")
+        lines.append("")
+
+    missing = quality.missing_fields
+    if missing:
+        lines.append("Missing fields:")
+        for label, fields in missing.items():
+            lines.append(f"  {label}: {', '.join(fields)}")
+        lines.append("")
+
     lines.append("Records:")
     for category in CANONICAL_CATEGORIES:
         records = _category_records(dataset, category)
@@ -129,7 +146,6 @@ def format_dataset_summary(dataset: HospitalDataset) -> str:
             lines.append(f"  {category.label}: {len(records)}")
     lines.append("")
 
-    quality = dataset.quality
     lines.extend(
         [
             "Processing:",

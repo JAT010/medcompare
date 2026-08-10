@@ -17,6 +17,7 @@ contributes a single weak signal and cannot outrank a URL/title identity.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -160,6 +161,8 @@ _TITLE_SIGNAL_WEIGHT = 0.6
 _HEADING_SIGNAL_WEIGHT = 0.5
 _JSONLD_SIGNAL_WEIGHT = 0.85
 _TEXT_SIGNAL_WEIGHT = 0.35
+_BREADCRUMB_SIGNAL_WEIGHT = 0.3
+_META_SIGNAL_WEIGHT = 0.25
 _CONFIDENCE_CAP = 0.95
 
 # Sources whose signals are grouped as one page-level voice in ``_classify``.
@@ -211,6 +214,13 @@ class PageClassifier:
             category = _JSONLD_TYPES.get(type_name)
             if category:
                 signals.append((category, _JSONLD_SIGNAL_WEIGHT, f"jsonld:{type_name}"))
+        for segment in _breadcrumb_segments(soup):
+            signals.extend(
+                _token_signals([segment], _BREADCRUMB_SIGNAL_WEIGHT, "breadcrumb")
+            )
+        meta = _meta_description(soup)
+        if meta:
+            signals.extend(_text_signals(meta, _TITLE_TOKENS, _META_SIGNAL_WEIGHT, "meta"))
         signals.extend(_text_signals(body, _TITLE_TOKENS, _TEXT_SIGNAL_WEIGHT, "text"))
         return _classify(signals)
 
@@ -316,3 +326,23 @@ def _text(value: str | None) -> str:
     if not value:
         return ""
     return " ".join(value.split())
+
+
+def _breadcrumb_segments(soup: BeautifulSoup) -> list[str]:
+    for container in soup.find_all(class_=re.compile(r"breadcrumb", re.I)):
+        text = _text(container.get_text(" ", strip=True))
+        if text:
+            return [
+                part.strip().lower()
+                for part in re.split(r"\s*[>/]\s*", text)
+                if part.strip()
+            ]
+    return []
+
+
+def _meta_description(soup: BeautifulSoup) -> str:
+    meta = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
+    if meta is None:
+        return ""
+    content = meta.get("content")
+    return _text(content) if isinstance(content, str) else ""

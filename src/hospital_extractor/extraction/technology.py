@@ -16,7 +16,7 @@ from hospital_extractor.extraction.listing import (
     is_boilerplate,
     link_entries,
 )
-from hospital_extractor.extraction.page_analyzer import AnalyzedPage, Section
+from hospital_extractor.extraction.page_analyzer import AnalyzedPage
 from hospital_extractor.models.technology import Technology
 
 __all__ = ["extract_technologies"]
@@ -72,13 +72,13 @@ def _from_cards(page: AnalyzedPage) -> list[Technology]:
 
 def _from_headings(page: AnalyzedPage) -> list[Technology]:
     records: list[Technology] = []
-    section_index = 0
+    sections_by_heading = {clean(section.heading): section for section in page.sections}
     for level, value in page.headings:
         if level not in ("h2", "h3") or not value or is_boilerplate(value) or len(value) > 120:
             continue
         if _looks_like_technology(value):
-            section = page.sections[section_index] if section_index < len(page.sections) else None
-            description = section.text if section and _same_heading(section, value) else None
+            section = sections_by_heading.get(clean(value))
+            description = section.text if section is not None else None
             records.append(
                 Technology(
                     name=value,
@@ -87,7 +87,6 @@ def _from_headings(page: AnalyzedPage) -> list[Technology]:
                     **provenance(page.url, title=page.title, method="heading", strength="low"),
                 )
             )
-        section_index += 1
     return records
 
 
@@ -109,7 +108,3 @@ def _category_of(text: str) -> str | None:
         if any(hint in lowered for hint in hints):
             return category
     return None
-
-
-def _same_heading(section: Section, value: str) -> bool:
-    return clean(section.heading) == clean(value)

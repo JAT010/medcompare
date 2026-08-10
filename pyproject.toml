@@ -45,6 +45,9 @@ select = ["E", "F", "I", "B", "UP"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "integration: live network tests against a real hospital website",
+]
 
 [tool.mypy]
 python_version = "3.13"

@@ -59,9 +59,11 @@ CANONICAL_CATEGORIES: tuple[CanonicalCategory, ...] = (
         single_record=True,
         required_fields=("name",),
     ),
-    CanonicalCategory("contacts", "Location & Contact", Contact, single_record=True),
+    CanonicalCategory("contacts", "Location & Contact", Contact, single_record=True,
+                      required_fields=()),
     CanonicalCategory(
-        "infrastructure", "Capacity & Infrastructure", Infrastructure, single_record=True
+        "infrastructure", "Capacity & Infrastructure", Infrastructure, single_record=True,
+        required_fields=(),
     ),
     CanonicalCategory("facilities", "Facilities", Facility),
     CanonicalCategory("departments", "Departments", Department),
@@ -77,7 +79,8 @@ CANONICAL_CATEGORIES: tuple[CanonicalCategory, ...] = (
     CanonicalCategory("awards", "Awards", Award),
     CanonicalCategory("programs", "Programs", Program),
     CanonicalCategory(
-        "visiting_information", "Visiting / Admission", VisitingInformation, single_record=True
+        "visiting_information", "Visiting / Admission", VisitingInformation, single_record=True,
+        required_fields=(),
     ),
     CanonicalCategory("other_information", "Other Hospital Information", OtherInformation),
 )

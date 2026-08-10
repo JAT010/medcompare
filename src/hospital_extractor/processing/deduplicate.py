@@ -14,11 +14,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from hospital_extractor.models.conflict import Conflict
+from hospital_extractor.processing.conflicts import (
+    _SKIP_FIELDS,
+    apply_resolution,
+    build_conflict,
+)
 from hospital_extractor.processing.normalize import normalize_text, normalize_url_value
 
 __all__ = ["DedupResult", "deduplicate_category", "identity_key"]
-
-_SKIP_FIELDS = frozenset({"extracted_at"})
 
 
 @dataclass
@@ -91,17 +94,16 @@ def _merge_into(primary: Any, other: Any, category: str, result: DedupResult) ->
         current = primary_data.get(field_name)
         if current is None:
             setattr(primary, field_name, value)
+            primary_data[field_name] = value
             continue
         if current != value:
-            result.conflicts.append(
-                Conflict(
-                    category=category,
-                    field=field_name,
-                    primary=_stringify(current),
-                    alternative=_stringify(value),
-                    source_urls=[_source_of(primary), _source_of(other)],
-                )
+            conflict = build_conflict(
+                category, field_name, current, value, primary, other
             )
+            apply_resolution(
+                primary, primary_data, field_name, conflict, alternative_value=value
+            )
+            result.conflicts.append(conflict)
 
 
 def _as_dict(record: Any) -> dict[str, Any]:

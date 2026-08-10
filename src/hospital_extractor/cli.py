@@ -18,7 +18,8 @@ from hospital_extractor.crawler.context import CrawlLimits, build_context
 from hospital_extractor.crawler.report import CrawlReport, format_summary
 from hospital_extractor.crawler.runner import CrawlAbortedError, run_crawl
 from hospital_extractor.export import dataset_basename, export_csv, export_excel
-from hospital_extractor.extraction import build_dataset
+from hospital_extractor.extraction import CrawlStats, build_dataset
+from hospital_extractor.extraction.coverage import format_coverage_report
 from hospital_extractor.schema.discovery import format_dataset_summary
 from hospital_extractor.storage import write_dataset
 from hospital_extractor.utils.logging import configure_logging
@@ -107,7 +108,13 @@ def _extract_and_export(report: CrawlReport, target_url: str, output_dir: str) -
             continue
         html = reference.read_bytes().decode("utf-8", errors="replace")
         pages.append((page.requested_url, html))
-    dataset = build_dataset(pages, target_url=target_url)
+    crawl_stats = CrawlStats(
+        pages_discovered=report.discovered,
+        pages_fetched=report.fetched,
+        pages_failed=report.failed,
+        pages_skipped=report.skipped,
+    )
+    dataset = build_dataset(pages, target_url=target_url, crawl_stats=crawl_stats)
 
     export_root = Path(output_dir) / "export"
     basename = dataset_basename(dataset)
@@ -118,6 +125,8 @@ def _extract_and_export(report: CrawlReport, target_url: str, output_dir: str) -
 
     print()
     print(format_dataset_summary(dataset))
+    print()
+    print(format_coverage_report(dataset))
     print()
     print("Exported:")
     print(f"  {json_path}")

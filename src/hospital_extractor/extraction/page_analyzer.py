@@ -14,18 +14,33 @@ from dataclasses import dataclass
 
 from bs4 import BeautifulSoup, Tag
 
-from hospital_extractor.extraction.helpers import clean, text_of
+from hospital_extractor.extraction.helpers import clean, in_navigation, text_of
 from hospital_extractor.extraction.jsonld import JsonLdResult, extract_jsonld
+from hospital_extractor.extraction.tables import Table, parse_tables
+from hospital_extractor.utils.urls import resolve_url
 
 __all__ = ["AnalyzedPage", "FaqItem", "Section", "analyze_page"]
 
 _MAX_VISIBLE_TEXT = 100_000
 _MAX_SECTION_TEXT = 4000
+_MAX_PARAGRAPH_TEXT = 2000
+_MAX_PARAGRAPHS = 300
+_MAX_LIST_ITEMS = 1000
+_MAX_LINKS = 500
 
 _PHONE_RE = re.compile(r"[+()\d][\d\s().-]{7,}\d")
 _FAQ_CLASS_HINT = re.compile(r"(faq|accordion|question|answer|q[_-]?a)")
 _QUESTION_CLASS_HINT = re.compile(r"(question|q[_-]?title|title|heading|h\d)")
 _ANSWER_CLASS_HINT = re.compile(r"(answer|content|panel|body|description|desc)")
+_PLACEHOLDER_ANSWER_RE = re.compile(
+    r"lorem ipsum|, ?, ?,|, , |undefined|null|placeholder|\{\{[^}]+\}\}|located at\s*,", re.I
+)
+_CARD_CLASS_RE = re.compile(
+    r"(card|doctor|specialist|physician|profile|facilit|amenit|department|specialit|specialt|"
+    r"treatment|procedure|technolog|award|recognit|achievement|accredit|certif|quality|program|"
+    r"service|insurance|tpa|provider|member|team)",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -60,6 +75,15 @@ class AnalyzedPage:
     tel_numbers: tuple[str, ...]
     emails: tuple[str, ...]
     cards: tuple[Tag, ...]
+    paragraphs: tuple[str, ...] = ()
+    lists: tuple[str, ...] = ()
+    tables: tuple[Table, ...] = ()
+    links: tuple[str, ...] = ()
+    address_links: tuple[str, ...] = ()
+    final_url: str | None = None
+    canonical_url: str | None = None
+    meta_description: str | None = None
+    page_category: str | None = None
 
 
 def analyze_page(html: str, url: str, title: str | None = None) -> AnalyzedPage:
@@ -82,6 +106,14 @@ def analyze_page(html: str, url: str, title: str | None = None) -> AnalyzedPage:
         tel_numbers=tuple(_tel_numbers(soup, visible_text)),
         emails=tuple(_emails(soup)),
         cards=tuple(_cards(soup)),
+        paragraphs=tuple(_paragraphs(soup)),
+        lists=tuple(_lists(soup)),
+        tables=tuple(parse_tables(soup)),
+        links=tuple(_links(soup, url)),
+        address_links=tuple(_address_links(soup)),
+        final_url=url,
+        canonical_url=_canonical_url(soup),
+        meta_description=_meta_description(soup),
     )
 
 
@@ -93,7 +125,7 @@ def _visible_text(soup: BeautifulSoup) -> str:
 
 def _headings(soup: BeautifulSoup) -> list[tuple[str, str]]:
     result: list[tuple[str, str]] = []
-    for node in soup.find_all(["h1", "h2", "h3"]):
+    for node in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
         value = clean(text_of(node))
         if value:
             result.append((node.name, value))
@@ -102,7 +134,9 @@ def _headings(soup: BeautifulSoup) -> list[tuple[str, str]]:
 
 def _sections(soup: BeautifulSoup) -> list[Section]:
     sections: list[Section] = []
-    for heading in soup.find_all(["h2", "h3"]):
+    for heading in soup.find_all(["h2", "h3", "h4"]):
+        if in_navigation(heading):
+            continue
         heading_text = clean(text_of(heading))
         if not heading_text:
             continue
@@ -115,8 +149,12 @@ def _sections(soup: BeautifulSoup) -> list[Section]:
 def _section_body(heading: Tag) -> str:
     parts: list[str] = []
     for sibling in heading.find_next_siblings():
-        if sibling.name in ("h1", "h2", "h3", "h4", "script", "style", "nav", "header"):
+        if sibling.name in (
+            "h1", "h2", "h3", "h4", "script", "style", "nav", "header", "footer", "aside",
+        ):
             break
+        if in_navigation(sibling):
+            continue
         value = text_of(sibling)
         if value:
             parts.append(value)
@@ -161,6 +199,18 @@ def _faq_from_html(soup: BeautifulSoup) -> list[FaqItem]:
     for container in soup.find_all(_is_faq_container):
         q_answers = _extract_qa_pairs(container)
         items.extend(q_answers)
+    for details in soup.find_all("details"):
+        if in_navigation(details):
+            continue
+        summary = details.find("summary")
+        question = clean(text_of(summary)) if summary is not None else None
+        if not question:
+            continue
+        full = clean(text_of(details))
+        if full and full.startswith(question):
+            full = clean(full[len(question):])
+        if full:
+            items.append(FaqItem(question=question, answer=full))
     return items
 
 
@@ -216,15 +266,23 @@ def _answer_for(node: Tag, following: list[Tag]) -> str | None:
 
 
 def _dedupe_faq(items: Sequence[FaqItem]) -> tuple[FaqItem, ...]:
-    seen: set[tuple[str, str]] = set()
+    seen: set[str] = set()
     result: list[FaqItem] = []
     for item in items:
-        key = (item.question.lower(), item.answer.lower())
+        if _is_placeholder_answer(item.answer):
+            continue
+        question = clean(item.question) or ""
+        key = question.lower()
         if key in seen:
             continue
         seen.add(key)
         result.append(item)
     return tuple(result)
+
+
+def _is_placeholder_answer(answer: str) -> bool:
+    """True for templated/boilerplate answers that carry no real information."""
+    return bool(_PLACEHOLDER_ANSWER_RE.search(answer))
 
 
 def _breadcrumbs(soup: BeautifulSoup, jsonld: JsonLdResult) -> list[str]:
@@ -280,10 +338,91 @@ def _emails(soup: BeautifulSoup) -> list[str]:
 def _cards(soup: BeautifulSoup) -> list[Tag]:
     cards: list[Tag] = []
     for node in soup.find_all(["div", "article", "li", "section"]):
+        if in_navigation(node):
+            continue
         classes = " ".join(c for c in node.get("class") or [])
-        if re.search(r"(^|\s)(card|doctor|specialist|physician|profile)", classes.lower()):
+        if _CARD_CLASS_RE.search(classes.lower()):
             cards.append(node)
     return cards[:200]
+
+
+def _main_scope(soup: BeautifulSoup) -> Tag:
+    for scope in ("main", "article"):
+        node = soup.find(scope)
+        if node is not None:
+            return node
+    body = soup.body
+    return body if body is not None else soup
+
+
+def _paragraphs(soup: BeautifulSoup) -> list[str]:
+    result: list[str] = []
+    for node in _main_scope(soup).find_all("p"):
+        if in_navigation(node):
+            continue
+        value = clean(text_of(node))
+        if value and len(value) >= 10:
+            result.append(value[:_MAX_PARAGRAPH_TEXT])
+        if len(result) >= _MAX_PARAGRAPHS:
+            break
+    return result
+
+
+def _lists(soup: BeautifulSoup) -> list[str]:
+    result: list[str] = []
+    for list_node in _main_scope(soup).find_all(["ul", "ol"]):
+        if in_navigation(list_node):
+            continue
+        for item in list_node.find_all("li", recursive=False):
+            value = clean(text_of(item))
+            if value:
+                result.append(value[:300])
+        if len(result) >= _MAX_LIST_ITEMS:
+            break
+    return result
+
+
+def _links(soup: BeautifulSoup, base_url: str) -> list[str]:
+    result: list[str] = []
+    for anchor in _main_scope(soup).find_all("a", href=True):
+        if in_navigation(anchor):
+            continue
+        href = anchor["href"]
+        if not isinstance(href, str):
+            continue
+        resolved = resolve_url(base_url, href)
+        if resolved is not None and resolved not in result:
+            result.append(resolved)
+        if len(result) >= _MAX_LINKS:
+            break
+    return result
+
+
+def _address_links(soup: BeautifulSoup) -> list[str]:
+    result: list[str] = []
+    for anchor in soup.find_all("a", href=True):
+        href = anchor["href"]
+        if not isinstance(href, str):
+            continue
+        if href.strip().lower().startswith("address:"):
+            result.append(href)
+    return _dedupe_ordered(result)
+
+
+def _canonical_url(soup: BeautifulSoup) -> str | None:
+    link = soup.find("link", rel=re.compile(r"^canonical$", re.I), href=True)
+    if link is None:
+        return None
+    href = link.get("href")
+    return clean(href) if isinstance(href, str) else None
+
+
+def _meta_description(soup: BeautifulSoup) -> str | None:
+    meta = soup.find("meta", attrs={"name": re.compile(r"^description$", re.I)})
+    if meta is None:
+        return None
+    content = meta.get("content")
+    return clean(content) if isinstance(content, str) else None
 
 
 def _dedupe_ordered(values: list[str]) -> list[str]:

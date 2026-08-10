@@ -3,7 +3,8 @@
 ``HospitalDataset`` is the primary internal model; the JSON document written
 here is its canonical serialization (hospital, entities, sources, quality,
 conflicts). Excel/CSV export are derived from it — this store is never derived
-from the exports.
+from the exports. Serialization is deterministic: keys are sorted and the same
+dataset always produces the same bytes.
 """
 
 from __future__ import annotations
@@ -23,7 +24,8 @@ def write_dataset(dataset: HospitalDataset, path: Path | str) -> Path:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
     payload = json.loads(dataset.model_dump_json())
-    output.write_text(json.dumps(payload, indent=JSON_INDENT, ensure_ascii=False), encoding="utf-8")
+    text = json.dumps(payload, indent=JSON_INDENT, ensure_ascii=False, sort_keys=True)
+    output.write_text(text, encoding="utf-8")
     return output
 
 

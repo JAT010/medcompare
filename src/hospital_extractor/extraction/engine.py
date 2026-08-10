@@ -12,8 +12,9 @@ categories. The engine never fabricates values and never resolves conflicts.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from hospital_extractor.config import ExtractionConfig, association_rank
@@ -35,6 +36,7 @@ from hospital_extractor.extraction.procedures import extract_procedures
 from hospital_extractor.extraction.programs import extract_programs
 from hospital_extractor.extraction.services import extract_services
 from hospital_extractor.extraction.specialities import extract_specialities
+from hospital_extractor.extraction.tables import extract_table_records
 from hospital_extractor.extraction.technology import extract_technologies
 from hospital_extractor.extraction.treatments import extract_treatments
 from hospital_extractor.extraction.visiting import extract_visiting
@@ -45,10 +47,16 @@ from hospital_extractor.processing.conflicts import merge_single_record
 from hospital_extractor.processing.deduplicate import deduplicate_category
 from hospital_extractor.processing.normalize import normalize_record
 from hospital_extractor.processing.validate import dataset_issues, validate_records
-from hospital_extractor.schema.canonical import CANONICAL_CATEGORIES
+from hospital_extractor.schema.canonical import CANONICAL_CATEGORIES, CATEGORY_LABELS
+from hospital_extractor.schema.discovery import category_records
 from hospital_extractor.utils.urls import validate_url
 
-__all__ = ["build_dataset", "analyze_pages", "pages_to_analyzed"]
+__all__ = [
+    "CrawlStats",
+    "build_dataset",
+    "analyze_pages",
+    "pages_to_analyzed",
+]
 
 if TYPE_CHECKING:
     from hospital_extractor.crawler.classify import PageClassifier
@@ -82,11 +90,58 @@ _ROUTING: dict[str, tuple[Callable[..., Sequence[object] | object | None], ...]]
     ),
 }
 
+# Classified page category -> canonical category keys it attempts to populate.
+_PAGE_TO_CATEGORY_KEYS: dict[str, tuple[str, ...]] = {
+    "hospital": ("hospital", "infrastructure"),
+    "contact": ("contacts",),
+    "doctor": ("doctors",),
+    "speciality": ("specialities",),
+    "department": ("departments",),
+    "facility": ("facilities",),
+    "treatment": ("treatments",),
+    "procedure": ("procedures",),
+    "technology": ("technologies",),
+    "emergency": ("emergency_services",),
+    "patient_service": ("patient_services",),
+    "insurance": ("insurance",),
+    "accreditation": ("accreditations",),
+    "award": ("awards",),
+    "program": ("programs",),
+    "visiting": ("visiting_information",),
+    "faq": (
+        "visiting_information",
+        "insurance",
+        "emergency_services",
+        "facilities",
+        "patient_services",
+        "programs",
+        "other_information",
+    ),
+}
+
+# A fetched page shorter than this is considered chrome/empty, not content that
+# "failed" extraction.
+_MIN_CONTENT_CHARS = 200
+_MAX_WARNINGS = 50
+
 
 @dataclass
 class _AnalyzedPageWithCategory:
     page: AnalyzedPage
     category: str
+
+
+@dataclass(frozen=True)
+class CrawlStats:
+    """Optional crawl-phase counters fed into the quality metadata.
+
+    When absent, the engine falls back to the number of analyzed pages.
+    """
+
+    pages_discovered: int = 0
+    pages_fetched: int = 0
+    pages_failed: int = 0
+    pages_skipped: int = 0
 
 
 def pages_to_analyzed(
@@ -102,6 +157,7 @@ def pages_to_analyzed(
     for url, html in pages:
         page = analyze_page(html, url)
         category = cls.from_content(html, url).category
+        page = replace(page, page_category=category)
         result.append(_AnalyzedPageWithCategory(page=page, category=category))
     return result
 
@@ -121,21 +177,54 @@ def build_dataset(
     target_url: str,
     config: ExtractionConfig | None = None,
     classifier: PageClassifier | None = None,
+    crawl_stats: CrawlStats | None = None,
 ) -> HospitalDataset:
-    """Build a complete :class:`HospitalDataset` from ``(url, html)`` pages."""
+    """Build a complete :class:`HospitalDataset` from ``(url, html)`` pages.
+
+    ``crawl_stats`` optionally carries crawl-phase counters (pages fetched /
+    failed) so the quality metadata reflects the whole run; when omitted the
+    analyzed page count is used.
+    """
     cfg = config or ExtractionConfig()
     target = validate_url(target_url)
     analyzed = pages_to_analyzed(pages, classifier=classifier)
     results: dict[str, list[object]] = {category.key: [] for category in CANONICAL_CATEGORIES}
 
     quality = DataQuality(pages_considered=len(analyzed))
+    if crawl_stats is not None:
+        quality.pages_crawled = crawl_stats.pages_fetched
+        quality.pages_classified = crawl_stats.pages_fetched
+        quality.pages_parsed = len(analyzed)
+    else:
+        quality.pages_crawled = len(analyzed)
+        quality.pages_classified = len(analyzed)
+        quality.pages_parsed = len(analyzed)
 
+    attempted = _attempted_category_keys(analyzed)
     _first_pass(analyzed, results, target=target, cfg=cfg)
     hospital_context = _hospital_context(results, target)
     _second_pass(analyzed, results, context=hospital_context, cfg=cfg)
+    _table_pass(analyzed, results)
 
-    dataset = _assemble(results, cfg=cfg, quality=quality)
+    dataset = _assemble(
+        results,
+        cfg=cfg,
+        quality=quality,
+        analyzed=analyzed,
+        attempted=attempted,
+        crawl_stats=crawl_stats,
+    )
     return dataset
+
+
+def _attempted_category_keys(
+    analyzed: Sequence[_AnalyzedPageWithCategory],
+) -> set[str]:
+    """Canonical category keys that at least one classified page attempted."""
+    attempted: set[str] = set()
+    for entry in analyzed:
+        attempted.update(_PAGE_TO_CATEGORY_KEYS.get(entry.category, ()))
+    return attempted
 
 
 def _first_pass(
@@ -145,7 +234,13 @@ def _first_pass(
     target: str,
     cfg: ExtractionConfig,
 ) -> None:
-    """Extract hospital identity + contact first so doctors can be judged."""
+    """Extract hospital identity + contact first so doctors can be judged.
+
+    Hospital profile pages carry the hospital-specific ``LocalBusiness``
+    JSON-LD (telephone, address, geo), so both ``hospital`` and ``contact``
+    pages feed the contact extractor; the network-wide ``MedicalOrganization``
+    block is deliberately not hospital-specific enough to override it.
+    """
     for entry in analyzed:
         category = entry.category
         if category == "hospital":
@@ -155,6 +250,9 @@ def _first_pass(
             infrastructure = extract_infrastructure(entry.page)
             if infrastructure is not None:
                 results["infrastructure"].append(infrastructure)
+            contact = extract_contact(entry.page)
+            if contact is not None:
+                results["contacts"].append(contact)
         elif category == "contact":
             contact = extract_contact(entry.page)
             if contact is not None:
@@ -195,6 +293,21 @@ def _store(results: dict[str, list[object]], record: object) -> None:
         if isinstance(record, category.model):
             results[category.key].append(record)
             return
+
+
+def _table_pass(
+    analyzed: Sequence[_AnalyzedPageWithCategory],
+    results: dict[str, list[object]],
+) -> None:
+    """Extract facts from published HTML tables on every analyzed page.
+
+    Runs after the routed extractors so table records join the same merge /
+    dedupe / validate flow (single-record categories merge, list categories
+    dedupe by identity).
+    """
+    for entry in analyzed:
+        for record in extract_table_records(entry.page):
+            _store(results, record)
 
 
 def _hospital_context(results: dict[str, list[object]], target: str) -> HospitalContext:
@@ -242,9 +355,13 @@ def _assemble(
     *,
     cfg: ExtractionConfig,
     quality: DataQuality,
+    analyzed: Sequence[_AnalyzedPageWithCategory],
+    attempted: set[str],
+    crawl_stats: CrawlStats | None,
 ) -> HospitalDataset:
     dataset = HospitalDataset()
     quality.records_extracted = sum(len(records) for records in results.values())
+    rejected_by_category: Counter[str] = Counter()
 
     for category in CANONICAL_CATEGORIES:
         raw = results[category.key]
@@ -258,6 +375,7 @@ def _assemble(
             candidates = _filter_doctors(candidates, cfg)
         validation = validate_records(category, candidates)
         quality.records_rejected += len(validation.rejected)
+        rejected_by_category[category.key] += len(validation.rejected)
         accepted = validation.accepted
         _set_dataset_field(dataset, category.key, accepted)
         _count_low_confidence(quality, accepted)
@@ -268,7 +386,14 @@ def _assemble(
                 if getattr(record, "hospital_association", None) == "uncertain"
             )
 
-    _finalize_quality(dataset, quality)
+    _finalize_quality(
+        dataset,
+        quality,
+        analyzed=analyzed,
+        attempted=attempted,
+        rejected_by_category=rejected_by_category,
+        crawl_stats=crawl_stats,
+    )
     return dataset
 
 
@@ -320,26 +445,163 @@ def _set_dataset_field(dataset: HospitalDataset, key: str, records: list[object]
         setattr(dataset, key, records)
 
 
-def _finalize_quality(dataset: HospitalDataset, quality: DataQuality) -> None:
+def _finalize_quality(
+    dataset: HospitalDataset,
+    quality: DataQuality,
+    *,
+    analyzed: Sequence[_AnalyzedPageWithCategory],
+    attempted: set[str],
+    rejected_by_category: Counter[str],
+    crawl_stats: CrawlStats | None,
+) -> None:
     from hospital_extractor.schema.discovery import (
         discover_categories,
         empty_categories,
     )
+    from hospital_extractor.schema.missing import analyze_missing_fields
 
     dataset.quality = quality
     quality.categories_discovered = discover_categories(dataset)
     quality.categories_empty = empty_categories(dataset)
 
-    issues = dataset_issues(dataset)
-    quality.warnings.extend(issue.message for issue in issues if issue.severity == "warning")
+    quality.records_by_category = {
+        category.label: len(category_records(dataset, category))
+        for category in CANONICAL_CATEGORIES
+        if category_records(dataset, category)
+    }
+    quality.extraction_methods = _count_extraction_methods(dataset)
 
     dataset.sources = _build_sources(dataset)
     quality.pages_extracted = len({source.source_url for source in dataset.sources})
+    quality.pages_with_information = quality.pages_extracted
+    quality.pages_without_information = max(0, quality.pages_considered - quality.pages_extracted)
+
+    content_failed_keys = _content_failed_category_keys(dataset, analyzed)
+    quality.category_coverage = _category_coverage(
+        dataset, attempted, rejected_by_category, content_failed_keys
+    )
+    quality.missing_fields = analyze_missing_fields(dataset, quality.category_coverage)
+
+    issues = dataset_issues(dataset)
+    quality.warnings.extend(issue.message for issue in issues if issue.severity == "warning")
+
+    _collect_warnings(
+        quality,
+        analyzed=analyzed,
+        content_failed_keys=content_failed_keys,
+        crawl_stats=crawl_stats,
+    )
+
+
+def _content_failed_category_keys(
+    dataset: HospitalDataset, analyzed: Sequence[_AnalyzedPageWithCategory]
+) -> set[str]:
+    """Category keys whose pages carried content but yielded no records.
+
+    A page counts as "content with failed extraction" when it has meaningful
+    visible text yet no record in the dataset points at it. Its classified
+    category is then marked ``failed`` in the coverage report.
+    """
+    pages_with_records = {source.source_url for source in dataset.sources}
+    failed: set[str] = set()
+    for entry in analyzed:
+        page = entry.page
+        if page.url in pages_with_records:
+            continue
+        if len(page.visible_text) < _MIN_CONTENT_CHARS:
+            continue
+        failed.update(_PAGE_TO_CATEGORY_KEYS.get(entry.category, ()))
+    return failed
+
+
+def _category_coverage(
+    dataset: HospitalDataset,
+    attempted: set[str],
+    rejected_by_category: Counter[str],
+    content_failed_keys: set[str],
+) -> dict[str, str]:
+    """Map every canonical category label to a coverage status.
+
+    ``found``: records exist. ``failed``: extraction was attempted (or records
+    were produced) but nothing survived. ``not_applicable``: reserved for
+    targets that explicitly do not offer the category (never inferred).
+    ``not_found``: no page attempted the category and no records exist — the
+    site simply does not publish it. ``not_found`` is deliberately distinct
+    from ``failed``.
+    """
+    coverage: dict[str, str] = {}
+    for category in CANONICAL_CATEGORIES:
+        if category_records(dataset, category):
+            status = "found"
+        elif rejected_by_category.get(category.key, 0) > 0:
+            status = "failed"
+        elif category.key in content_failed_keys:
+            status = "failed"
+        else:
+            status = "not_found"
+        coverage[category.label] = status
+    return coverage
+
+
+def _collect_warnings(
+    quality: DataQuality,
+    *,
+    analyzed: Sequence[_AnalyzedPageWithCategory],
+    content_failed_keys: set[str],
+    crawl_stats: CrawlStats | None,
+) -> None:
+    """Append non-fatal extraction warnings (the pipeline never stops on them)."""
+    warnings = list(quality.warnings)
+    seen: set[str] = set(warnings)
+
+    def warn(message: str) -> None:
+        if message not in seen and len(warnings) < _MAX_WARNINGS:
+            seen.add(message)
+            warnings.append(message)
+
+    for entry in analyzed:
+        page = entry.page
+        if page.jsonld.malformed:
+            warn(
+                f"malformed JSON-LD ({page.jsonld.malformed} block(s) skipped) "
+                f"on {page.url}"
+            )
+    for key in sorted(content_failed_keys):
+        warn(f"page(s) with content but no records extracted for {key}")
+
+    if quality.duplicates_removed:
+        warn(
+            f"suspicious duplicate records merged: {quality.duplicates_removed} removed"
+        )
+    if quality.uncertain_hospital_associations:
+        warn(
+            f"{quality.uncertain_hospital_associations} doctor(s) with uncertain "
+            f"hospital association"
+        )
+    for conflict in quality.conflicts:
+        if conflict.resolution_status == "unresolved":
+            warn(
+                f"unresolved conflict in "
+                f"{CATEGORY_LABELS.get(conflict.category, conflict.category)} "
+                f"'{conflict.field}': {conflict.primary} vs {conflict.alternative}"
+            )
+    if crawl_stats is not None and crawl_stats.pages_failed:
+        warn(f"{crawl_stats.pages_failed} page(s) inaccessible or failed to fetch")
+
+    quality.warnings = warnings
+
+
+def _count_extraction_methods(dataset: HospitalDataset) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for category in CANONICAL_CATEGORIES:
+        for record in category_records(dataset, category):
+            method = getattr(record, "extraction_method", None)
+            if isinstance(method, str):
+                counts[method] += 1
+    return dict(counts)
 
 
 def _build_sources(dataset: HospitalDataset) -> list[SourceRecord]:
-    from hospital_extractor.schema.discovery import category_records
-
     sources: list[SourceRecord] = []
     seen: set[tuple[str, str, str]] = set()
     for category in CANONICAL_CATEGORIES:

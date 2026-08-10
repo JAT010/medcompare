@@ -8,9 +8,10 @@ the rest. Contact categories are only assigned from explicit labels
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from hospital_extractor.extraction.helpers import clean, provenance
+from hospital_extractor.extraction.helpers import clean, in_navigation, provenance, text_of
 from hospital_extractor.extraction.page_analyzer import AnalyzedPage
 from hospital_extractor.models.contact import Contact
 
@@ -24,6 +25,17 @@ _CONTACT_JSONLD_TYPES = (
     "Organization",
     "HealthClub",
 )
+
+_EMERGENCY_LABELS = ("emergency", "ambulance", "24x7 emergency", "24/7 emergency")
+_APPOINTMENT_LABELS = (
+    "appointment",
+    "book appointment",
+    "book an appointment",
+    "consultation booking",
+    "opd booking",
+    "schedule an appointment",
+)
+_PHONE_RE = re.compile(r"[+()\d][\d\s().-]{7,}\d")
 
 
 def extract_contact(page: AnalyzedPage) -> Contact | None:
@@ -113,6 +125,14 @@ def _from_html(page: AnalyzedPage, data: dict[str, Any]) -> None:
         numbers = [n for n in page.tel_numbers if not _looks_like_year(n)]
         if numbers:
             data.setdefault("phone", numbers[0])
+    if data.get("emergency_phone") is None:
+        number = _labelled_phone(page, _EMERGENCY_LABELS)
+        if number:
+            data.setdefault("emergency_phone", number)
+    if data.get("appointment_phone") is None:
+        number = _labelled_phone(page, _APPOINTMENT_LABELS)
+        if number:
+            data.setdefault("appointment_phone", number)
     if data.get("email") is None and page.emails:
         data.setdefault("email", page.emails[0])
     if data.get("maps_url") is None:
@@ -124,7 +144,7 @@ def _from_html(page: AnalyzedPage, data: dict[str, Any]) -> None:
                 data.setdefault("maps_url", href)
                 break
     if data.get("address") is None:
-        address = _visible_address(page)
+        address = _visible_address(page) or _address_link_address(page) or _address_element(page)
         if address:
             data.setdefault("address", address)
 
@@ -133,6 +153,40 @@ def _visible_address(page: AnalyzedPage) -> str | None:
     for section in page.sections:
         if "address" in section.heading.lower() or "location" in section.heading.lower():
             return clean(section.text)
+    return None
+
+
+def _address_link_address(page: AnalyzedPage) -> str | None:
+    for link in page.address_links:
+        value = clean(link[len("address:"):])
+        if value:
+            return value
+    return None
+
+
+def _address_element(page: AnalyzedPage) -> str | None:
+    for node in page.soup.find_all("address"):
+        if in_navigation(node):
+            continue
+        value = clean(text_of(node))
+        if value:
+            return value
+    return None
+
+
+def _labelled_phone(page: AnalyzedPage, labels: tuple[str, ...]) -> str | None:
+    for section in page.sections:
+        if not any(label in section.heading.lower() for label in labels):
+            continue
+        match = _PHONE_RE.search(section.text)
+        if match:
+            return clean(match.group(0))
+    for item in page.faq_items:
+        if not any(label in item.question.lower() for label in labels):
+            continue
+        match = _PHONE_RE.search(item.answer)
+        if match:
+            return clean(match.group(0))
     return None
 
 

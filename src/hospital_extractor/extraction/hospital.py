@@ -46,6 +46,12 @@ _CAPACITY_PATTERNS: tuple[tuple[str, str], ...] = (
     ("cath_labs", r"(\d[\d,]*)\+?\s*cath\s*labs?"),
     ("patient_rooms", r"(\d[\d,]*)\+?\s*(?:patient\s+)?rooms?"),
     ("total_beds", r"(\d[\d,]*)\+?\s*(?:bedded|beds?)\b"),
+    ("total_beds", r"(?:bed|bedded)\s+capacity\s+(?:of|is|=|:)?\s*(\d[\d,]*)\+?"),
+    ("total_beds", r"capacity\s+(?:of|is|=|:)?\s*(\d[\d,]*)\+?\s*(?:bedded|beds?)\b"),
+)
+_BARE_CAPACITY_RE = re.compile(r"\bcapacity\s+(?:of|is|=|:)?\s*(\d[\d,]*)\b", re.I)
+_BARE_CAPACITY_GUARD_RE = re.compile(
+    r"(icu|intensive|critical|cath|patient|diagnostic|mri|scan|parking|laborator)", re.I
 )
 _OTHER_CAPACITY_UNITS = ("bed", "beds", "unit", "units", "room", "rooms", "theatre", "theatres",
                          "lab", "labs", "suite", "suites", "ward", "wards", "floor", "floors",
@@ -119,8 +125,11 @@ def extract_infrastructure(page: AnalyzedPage) -> Infrastructure | None:
     for field, pattern in _CAPACITY_PATTERNS:
         match = re.search(pattern, remaining, re.I)
         if match:
-            values[field] = parse_leading_int(match.group(1))
+            if values[field] is None:
+                values[field] = parse_leading_int(match.group(1))
             remaining = remaining[: match.start()] + " " + remaining[match.end():]
+    if values["total_beds"] is None:
+        values["total_beds"] = _bare_capacity(about)
     other = _other_capacity(remaining)
     if not any(values.values()) and not other:
         return None
@@ -259,6 +268,24 @@ def _counts(about: str | None) -> dict[str, int | None]:
         match = re.search(pattern, about, re.I)
         result[field] = parse_leading_int(match.group(1)) if match else None
     return result
+
+
+def _bare_capacity(about: str) -> int | None:
+    """Parse a bare "capacity of 650" only when the context supports beds.
+
+    Without an explicit bed unit, "capacity" is ambiguous (parking, labs,
+    OPD slots...). We only accept it when the same About text mentions beds and
+    the surrounding window is free of other capacity-like nouns.
+    """
+    match = _BARE_CAPACITY_RE.search(about)
+    if not match:
+        return None
+    if "bed" not in about.lower():
+        return None
+    window = about[max(0, match.start() - 120): match.end() + 120]
+    if _BARE_CAPACITY_GUARD_RE.search(window):
+        return None
+    return parse_leading_int(match.group(1))
 
 
 def _other_capacity(text: str) -> str | None:

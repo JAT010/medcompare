@@ -20,7 +20,8 @@ from urllib.parse import urlsplit
 
 from bs4 import Tag
 
-from hospital_extractor.extraction.helpers import clean, provenance, text_of
+from hospital_extractor.extraction.helpers import clean, in_navigation, provenance, text_of
+from hospital_extractor.extraction.listing import is_boilerplate
 from hospital_extractor.extraction.page_analyzer import AnalyzedPage
 from hospital_extractor.models.doctor import Doctor
 
@@ -38,11 +39,17 @@ class HospitalContext:
     location_text: str | None = None
 
 
-_EXPERIENCE_RE = re.compile(r"experience\s*[:]?\s*(\d[\d,.]*\s*\+?\s*(?:years?|yrs?))", re.I)
+_EXPERIENCE_RE = re.compile(
+    r"(?:experience\s*[:]?\s*|over\s+)(\d[\d,.]*\s*\+?\s*(?:years?|yrs?))"
+    r"|(\d[\d,.]*\s*\+?\s*(?:years|yrs)\s+(?:of\s+)?experience)",
+    re.I,
+)
 _GENDER_HINTS = ("male", "female")
 _LISTING_IN_RE = re.compile(r"-in-([a-z0-9-]+)$")
 _NAME_CLASS_RE = re.compile(r"(name|title|h\d)", re.I)
 _CARD_CLASS_RE = re.compile(r"(card|doctor|specialist|physician|profile|team)", re.I)
+_DEPARTMENT_CLASS_RE = re.compile(r"(department|dept)\b", re.I)
+_LOCATION_CLASS_RE = re.compile(r"\b(location|city|address)\b", re.I)
 
 
 def extract_doctors(page: AnalyzedPage, context: HospitalContext) -> list[Doctor]:
@@ -82,7 +89,7 @@ def _doctors_from_cards(page: AnalyzedPage, context: HospitalContext) -> list[Do
     seen_anchors: set[str] = set()
     for anchor in page.soup.find_all("a", href=True):
         href = anchor["href"]
-        if not isinstance(href, str):
+        if not isinstance(href, str) or in_navigation(anchor):
             continue
         path = urlsplit(href).path
         segments = [segment for segment in path.split("/") if segment]
@@ -117,9 +124,11 @@ def _doctor_from_card(card: Tag, page: AnalyzedPage, context: HospitalContext) -
     return Doctor(
         name=name,
         speciality=speciality,
+        department=_card_department(card),
         designation=designation,
         experience=experience,
         gender=gender,
+        location=_card_location(card),
         profile_url=profile_url,
         hospital_association=association,
         **provenance(
@@ -181,8 +190,24 @@ def _card_experience(card: Tag) -> str | None:
     text = text_of(card)
     match = _EXPERIENCE_RE.search(text)
     if match:
-        value = clean(match.group(1))
+        value = clean(match.group(1) or match.group(2))
         if value and len(value) < 60:
+            return value
+    return None
+
+
+def _card_department(card: Tag) -> str | None:
+    for node in card.find_all(class_=_DEPARTMENT_CLASS_RE):
+        value = clean(text_of(node))
+        if value and not is_boilerplate(value) and len(value) < 120:
+            return value
+    return None
+
+
+def _card_location(card: Tag) -> str | None:
+    for node in card.find_all(class_=_LOCATION_CLASS_RE):
+        value = clean(text_of(node))
+        if value and not is_boilerplate(value) and len(value) < 120:
             return value
     return None
 

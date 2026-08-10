@@ -25,5 +25,6 @@ class Doctor(EntityRecord):
     experience: str | None = None
     gender: str | None = None
     opd_hours: str | None = None
+    location: str | None = None
     profile_url: str | None = None
     hospital_association: str | None = None
