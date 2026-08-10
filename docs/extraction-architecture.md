@@ -154,8 +154,8 @@ warnings.
 ## 8. Implementation Order (incremental, per §25 of the master prompt)
 
 1. ✅ `utils` + `models` + toolchain (done, 85 tests green)
-2. `crawler/discovery` + `url_filter` (sitemap/robots parsing, seeds) — fixture tests
-3. `crawler/crawler` + `storage/raw` (polite fetch, retry, cache) — fixture + mock transport tests
+2. ✅ `crawler/discovery` + `url_filter` (sitemap/robots parsing, seeds) — fixture tests
+3. ✅ `crawler/crawler` + `storage/raw` (polite fetch, retry, cache) — fixture + mock transport tests
 4. `extraction/page_analyzer` + `jsonld` (page signals, structured data)
 5. Entity extractors (hospital → doctors → specialities → procedures → technology → services)
 6. `processing/*` (normalize, dedupe, validate)
