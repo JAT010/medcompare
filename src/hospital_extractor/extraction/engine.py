@@ -27,7 +27,12 @@ from hospital_extractor.extraction.hospital import (
     extract_hospital_overview,
     extract_infrastructure,
 )
-from hospital_extractor.extraction.page_analyzer import AnalyzedPage, analyze_page
+from hospital_extractor.extraction.page_analyzer import (
+    AnalyzedPage,
+    analyze_page,
+    is_site_root,
+    is_target_scoped,
+)
 from hospital_extractor.extraction.procedures import extract_procedures
 from hospital_extractor.extraction.specialities import extract_specialities
 from hospital_extractor.extraction.tables import extract_table_records
@@ -168,8 +173,14 @@ def build_dataset(
     attempted = _attempted_category_keys(analyzed)
     _first_pass(analyzed, results, target=target, cfg=cfg)
     hospital_context = _hospital_context(results, target)
-    _second_pass(analyzed, results, context=hospital_context)
-    _table_pass(analyzed, results)
+    hospital_name = _overview_name(results)
+    scoped_analyzed = [
+        entry
+        for entry in analyzed
+        if is_target_scoped(entry.page, anchor_url=target, hospital_name=hospital_name)
+    ]
+    _second_pass(scoped_analyzed, results, context=hospital_context)
+    _table_pass(scoped_analyzed, results)
 
     dataset = _assemble(
         results,
@@ -180,6 +191,13 @@ def build_dataset(
         crawl_stats=crawl_stats,
     )
     return dataset
+
+
+def _overview_name(results: dict[str, list[object]]) -> str | None:
+    if not results["hospital"]:
+        return None
+    name = getattr(results["hospital"][0], "name", None)
+    return name if isinstance(name, str) and name else None
 
 
 def _attempted_category_keys(
@@ -201,27 +219,58 @@ def _first_pass(
 ) -> None:
     """Extract hospital identity + contact first so doctors can be judged.
 
-    Hospital profile pages carry the hospital-specific ``LocalBusiness``
-    JSON-LD (telephone, address, geo), so both ``hospital`` and ``contact``
-    pages feed the contact extractor; the network-wide ``MedicalOrganization``
-    block is deliberately not hospital-specific enough to override it.
+    Identity is only taken from target-scoped pages: the anchor page and any
+    page that names the hospital. The site root (corporate chrome) and
+    other-city hospital/contact pages never feed the master record. The anchor
+    page carries the hospital-specific ``LocalBusiness`` JSON-LD (telephone,
+    address, geo), so both ``hospital`` and ``contact`` extraction run on it;
+    the network-wide ``MedicalOrganization`` block is deliberately not
+    hospital-specific enough to override the anchor's identity.
     """
+    anchors = [
+        entry for entry in analyzed if is_target_scoped(entry.page, anchor_url=target)
+    ]
+    if not anchors:
+        # Anchor URL drift (redirect / trailing slash): fall back to the first
+        # non-root hospital-classified page so identity is never lost.
+        anchors = [
+            entry
+            for entry in analyzed
+            if entry.category == "hospital" and not is_site_root(entry.page.url)
+        ]
+    for entry in anchors:
+        _extract_identity(entry, results, target=target)
+
+    name = _overview_name(results)
     for entry in analyzed:
-        category = entry.category
-        if category == "hospital":
-            overview = extract_hospital_overview(entry.page, website=target)
-            if overview is not None:
-                results["hospital"].append(overview)
-            infrastructure = extract_infrastructure(entry.page)
-            if infrastructure is not None:
-                results["infrastructure"].append(infrastructure)
-            contact = extract_contact(entry.page)
-            if contact is not None:
-                results["contacts"].append(contact)
-        elif category == "contact":
-            contact = extract_contact(entry.page)
-            if contact is not None:
-                results["contacts"].append(contact)
+        if entry in anchors:
+            continue
+        if not is_target_scoped(entry.page, anchor_url=target, hospital_name=name):
+            continue
+        _extract_identity(entry, results, target=target)
+
+
+def _extract_identity(
+    entry: _AnalyzedPageWithCategory,
+    results: dict[str, list[object]],
+    *,
+    target: str,
+) -> None:
+    category = entry.category
+    if category == "hospital":
+        overview = extract_hospital_overview(entry.page, website=target)
+        if overview is not None:
+            results["hospital"].append(overview)
+        infrastructure = extract_infrastructure(entry.page)
+        if infrastructure is not None:
+            results["infrastructure"].append(infrastructure)
+        contact = extract_contact(entry.page)
+        if contact is not None:
+            results["contacts"].append(contact)
+    elif category == "contact":
+        contact = extract_contact(entry.page)
+        if contact is not None:
+            results["contacts"].append(contact)
 
 
 def _second_pass(

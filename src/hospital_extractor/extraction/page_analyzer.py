@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from copy import deepcopy
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup, Tag
 
@@ -19,7 +21,7 @@ from hospital_extractor.extraction.jsonld import JsonLdResult, extract_jsonld
 from hospital_extractor.extraction.tables import Table, parse_tables
 from hospital_extractor.utils.urls import resolve_url
 
-__all__ = ["AnalyzedPage", "FaqItem", "Section", "analyze_page"]
+__all__ = ["AnalyzedPage", "FaqItem", "Section", "analyze_page", "is_target_scoped"]
 
 _MAX_VISIBLE_TEXT = 100_000
 _MAX_SECTION_TEXT = 4000
@@ -39,6 +41,20 @@ _CARD_CLASS_RE = re.compile(
     r"(card|doctor|specialist|physician|profile|facilit|amenit|department|specialit|specialt|"
     r"treatment|procedure|technolog|award|recognit|achievement|accredit|certif|quality|program|"
     r"service|insurance|tpa|provider|member|team)",
+    re.I,
+)
+
+# Site-wide carousel/slider containers. Their contents are marketing widgets
+# repeated across the site (doctor carousels, technology sliders), not
+# hospital-scoped facts, so boolean detection excludes them.
+_CAROUSEL_CLASS_RE = re.compile(r"(carousel|slick|swiper|owl[- ]?carousel|slider)", re.I)
+
+# Navigation/menu chrome (mega menus, dropdowns, navbars). These repeat the
+# whole site's link list on every page (e.g. a hospital selector naming every
+# branch), so they are stripped from scoped text like header/nav/footer.
+_NAV_CHROME_CLASS_RE = re.compile(
+    r"(megadropdown|mega[- ]?menu|dropdown[- ]?menu|navbar|nav[- ]?menu|"
+    r"nav[- ]?list|main[- ]?nav|site[- ]?nav|primary[- ]?nav|menu[- ]?bar)",
     re.I,
 )
 
@@ -75,6 +91,7 @@ class AnalyzedPage:
     tel_numbers: tuple[str, ...]
     emails: tuple[str, ...]
     cards: tuple[Tag, ...]
+    content_text: str = ""
     paragraphs: tuple[str, ...] = ()
     lists: tuple[str, ...] = ()
     tables: tuple[Table, ...] = ()
@@ -99,6 +116,7 @@ def analyze_page(html: str, url: str, title: str | None = None) -> AnalyzedPage:
         soup=soup,
         jsonld=jsonld,
         visible_text=visible_text,
+        content_text=_content_text(soup),
         headings=tuple(_headings(soup)),
         sections=tuple(_sections(soup)),
         faq_items=_dedupe_faq(faq_items),
@@ -353,6 +371,71 @@ def _main_scope(soup: BeautifulSoup) -> Tag:
             return node
     body = soup.body
     return body if body is not None else soup
+
+
+def _content_text(soup: BeautifulSoup) -> str:
+    """Visible text of the page's main content region, chrome removed.
+
+    ``visible_text`` is the whole document; this scoped variant strips header /
+    nav / footer / aside, script/style payloads and site-wide carousels so
+    boolean detection only sees content that describes the page's subject.
+    Runs on a copy: other signals keep using the unmodified document.
+    """
+    scope = deepcopy(_main_scope(soup))
+    for selector in ("script", "style", "nav", "header", "footer", "aside", "select", "form"):
+        for tag in scope.find_all(selector):
+            tag.decompose()
+    for tag in list(scope.find_all(class_=_CAROUSEL_CLASS_RE)):
+        tag.decompose()
+    for tag in list(scope.find_all(class_=_NAV_CHROME_CLASS_RE)):
+        tag.decompose()
+    return " ".join(scope.get_text(" ", strip=True).split())[:_MAX_VISIBLE_TEXT]
+
+
+def is_target_scoped(
+    page: AnalyzedPage,
+    *,
+    anchor_url: str | None = None,
+    hospital_name: str | None = None,
+) -> bool:
+    """True when *page* plausibly describes the target hospital.
+
+    The anchor page (the target hospital URL, or the page the hospital
+    overview was extracted from) is always in scope. Any other page contributes
+    evidence only when its title or main content names the hospital; the site
+    root is corporate chrome, never hospital evidence. Pages that never mention
+    the target (other-city doctor pages, generic condition pages, ...) stay out
+    of scope.
+    """
+    if anchor_url and page.url == anchor_url:
+        return True
+    if _is_site_root(page.url):
+        return False
+    if not hospital_name:
+        return False
+    haystack = " ".join(part for part in (page.title or "", page.content_text) if part)
+    return _mentions_hospital(haystack, hospital_name)
+
+
+def is_site_root(url: str) -> bool:
+    return urlsplit(url).path in ("", "/")
+
+
+def _is_site_root(url: str) -> bool:
+    return is_site_root(url)
+
+
+def _mentions_hospital(text: str, name: str) -> bool:
+    if not text or not name:
+        return False
+    normalized = _normalize_space(text.lower())
+    base = _normalize_space(name.lower())
+    variants = {base, base.replace(",", " ")}
+    return any(variant and variant in normalized for variant in variants)
+
+
+def _normalize_space(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def _paragraphs(soup: BeautifulSoup) -> list[str]:

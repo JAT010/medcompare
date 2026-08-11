@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from hospital_extractor.extraction.page_analyzer import AnalyzedPage
+from hospital_extractor.extraction.page_analyzer import AnalyzedPage, is_target_scoped
 from hospital_extractor.models.dataset import HospitalDataset
 from hospital_extractor.models.intake import IntakeEvidence, MasterIntake
 from hospital_extractor.schema.boolean_resolver import apply_detectors, resolve
@@ -48,7 +48,7 @@ _BOOLEAN_RECORD_RULES: tuple[tuple[str, tuple[str, ...], re.Pattern[str]], ...] 
     (
         "mri_3_tesla_or_higher",
         ("technologies", "facilities"),
-        re.compile(r"3[-\s]?tesla|three[-\s]?tesla", re.I),
+        re.compile(r"3(?:\.\d+)?[-\s]?tesla|three[-\s]?tesla", re.I),
     ),
     (
         "cardiac_sciences_enabled",
@@ -106,20 +106,30 @@ _BOOLEAN_RECORD_RULES: tuple[tuple[str, tuple[str, ...], re.Pattern[str]], ...] 
 def project_intake(
     dataset: HospitalDataset,
     pages: Sequence[AnalyzedPage] = (),
+    *,
+    target_url: str | None = None,
 ) -> MasterIntake:
     """Project the final 25-field intake row from an assembled dataset.
 
     ``pages`` is optional: when given, the boolean corpus is also run over each
-    page's visible text, adding page-level evidence to the record-level
-    evidence.
+    target-scoped page's main content, adding page-level evidence to the
+    record-level evidence. ``target_url`` anchors the scope test; when omitted
+    the page the hospital overview was extracted from is used.
     """
     evidence: dict[str, list[IntakeEvidence]] = {}
     _collect_record_evidence(dataset, evidence)
-    _collect_page_evidence(pages, evidence)
+
+    overview = dataset.hospital
+    hospital_name = overview.name if overview is not None else None
+    anchor_url = target_url or (
+        getattr(overview, "source_url", None) if overview is not None else None
+    )
+    _collect_page_evidence(
+        pages, evidence, anchor_url=anchor_url, hospital_name=hospital_name
+    )
 
     intake, _ = resolve({}, evidence)
 
-    overview = dataset.hospital
     intake.hospital_name = overview.name if overview is not None else None
     intake.established_year = overview.established_year if overview is not None else None
     intake.logo_image_url = overview.logo_url if overview is not None else None
@@ -203,10 +213,16 @@ def _records_in(dataset: HospitalDataset, categories: tuple[str, ...]) -> list[o
 
 
 def _collect_page_evidence(
-    pages: Sequence[AnalyzedPage], evidence: dict[str, list[IntakeEvidence]]
+    pages: Sequence[AnalyzedPage],
+    evidence: dict[str, list[IntakeEvidence]],
+    *,
+    anchor_url: str | None = None,
+    hospital_name: str | None = None,
 ) -> None:
     for page in pages:
-        for item in apply_detectors(page.visible_text, page.url):
+        if not is_target_scoped(page, anchor_url=anchor_url, hospital_name=hospital_name):
+            continue
+        for item in apply_detectors(page.content_text, page.url):
             evidence.setdefault(item.field_key, []).append(item)
 
 

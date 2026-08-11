@@ -331,12 +331,18 @@ def _website(
 
 
 def _logo_url(page: AnalyzedPage, jsonld_blocks: list[dict[str, Any]]) -> str | None:
-    """Best logo URL for the hospital: JSON-LD ``logo``, favicon, header img.
+    """Best logo URL for the hospital: the page-level hospital's JSON-LD logo.
 
+    Only a hospital-specific block (``Hospital``/``MedicalClinic``/
+    ``LocalBusiness``, or a block whose ``url`` matches the page) may supply the
+    logo. A network/parent brand logo (``MedicalOrganization`` at the site
+    root) is corporate chrome, not this hospital's logo, so when it is the only
+    declared logo we deliberately do not fall back to the header brand image.
     URLs are resolved against the page and normalized; ``None`` when nothing
     usable is found.
     """
-    for block in jsonld_blocks:
+    page_level = [block for block in jsonld_blocks if _is_page_level(block, page)]
+    for block in page_level:
         logo = block.get("logo")
         if isinstance(logo, str):
             resolved = resolve_url(page.url, logo)
@@ -349,6 +355,8 @@ def _logo_url(page: AnalyzedPage, jsonld_blocks: list[dict[str, Any]]) -> str | 
                     resolved = resolve_url(page.url, value)
                     if resolved:
                         return resolved
+    if any(not _is_page_level(block, page) and block.get("logo") for block in jsonld_blocks):
+        return None
     for link in page.soup.find_all("link", rel=True):
         rel = link.get("rel")
         rels = rel if isinstance(rel, list) else [rel]

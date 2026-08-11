@@ -42,6 +42,12 @@ _ADDRESS_BOILERPLATE_RE = re.compile(
     r"\b(read less|read more|view on map|directions|get directions)\b", re.I
 )
 _POSTAL_RE = re.compile(r"\b\d{6}\b")
+
+# Address segments that read as a street/area qualifier rather than a locality.
+_LOCALITY_SUFFIX_RE = re.compile(
+    r"\b(marg|road|rd|lane|street|st|avenue|ave|sector|phase|block|building|tower|"
+    r"complex|floor|district|area|chowk|square|nagar|colony|layout|estate)\b", re.I
+)
 _STATE_HINTS = (
     "andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh",
     "goa", "gujarat", "haryana", "himachal pradesh", "jharkhand", "karnataka",
@@ -266,7 +272,26 @@ def _locality_from_address(data: dict[str, Any]) -> str | None:
         if re.match(r"^\d", candidate):
             return None
         return candidate
+    # The city may live only in ``addressLocality`` (e.g. street address
+    # "..., Saket" + city "New Delhi"): the final address part is still a
+    # plausible locality.
+    if parts and _plausible_locality(parts[-1]):
+        return parts[-1]
     return None
+
+
+def _plausible_locality(value: str) -> bool:
+    """True when *value* looks like a neighbourhood name, not a street."""
+    cleaned = clean(value)
+    if not cleaned or len(cleaned) < 2 or len(cleaned) > 40:
+        return False
+    if re.search(r"\d", cleaned):
+        return False
+    if not re.match(r"^[A-Za-z]", cleaned):
+        return False
+    if _LOCALITY_SUFFIX_RE.search(cleaned):
+        return False
+    return True
 
 
 def _labelled_phone(page: AnalyzedPage, labels: tuple[str, ...]) -> str | None:

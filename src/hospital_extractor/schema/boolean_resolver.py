@@ -62,7 +62,7 @@ _FEATURE_TERMS: dict[str, tuple[str, ...]] = {
         r"laparoscopic",
         r"minimal[-\s]?invasive\s+surgery",
     ),
-    "mri_3_tesla_or_higher": (r"3[-\s]?tesla", r"three[-\s]?tesla"),
+    "mri_3_tesla_or_higher": (r"3(?:\.\d+)?[-\s]?tesla", r"three[-\s]?tesla"),
     "jci_accredited": (r"\bjci\b",),
     "icu": (r"\bicu\b", r"intensive\s+care\s+unit"),
     "cardiac_sciences_enabled": (r"cardiac",),

@@ -134,7 +134,7 @@ def _extract_and_export(report: CrawlReport, target_url: str, output_dir: str) -
     json_path = write_dataset(dataset, export_root / f"{basename}.json")
 
     analyzed = analyze_pages(pages)
-    intake = project_intake(dataset, pages=analyzed)
+    intake = project_intake(dataset, pages=analyzed, target_url=target_url)
     master_dir = export_root / f"{basename}_master"
     master_csv_path, master_quality_path = export_master_csv(
         intake,
