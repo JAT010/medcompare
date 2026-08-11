@@ -3,8 +3,8 @@
 ``hospital-extractor URL`` runs the discovery/crawl phase for one hospital
 website and prints a summary of what was found. The crawled raw pages are
 stored under ``data/raw/<run>/``. With ``--export`` the crawl is followed by
-the full extraction pipeline: entities -> dataset -> JSON/Excel/CSV output
-under ``data/export/<run>/``.
+the full extraction pipeline: dataset -> intake -> JSON + master CSV/XLSX
+output (the final 25-column master intake) under ``data/export/<run>/``.
 """
 
 from __future__ import annotations
@@ -14,12 +14,17 @@ import asyncio
 import sys
 from pathlib import Path
 
+from hospital_extractor.config import load_config
 from hospital_extractor.crawler.context import CrawlLimits, build_context
 from hospital_extractor.crawler.report import CrawlReport, format_summary
 from hospital_extractor.crawler.runner import CrawlAbortedError, run_crawl
-from hospital_extractor.export import dataset_basename, export_csv, export_excel
+from hospital_extractor.export import (
+    dataset_basename,
+    export_master_csv,
+    export_master_excel,
+)
 from hospital_extractor.extraction import CrawlStats, build_dataset
-from hospital_extractor.extraction.coverage import format_coverage_report
+from hospital_extractor.extraction.intake import project_intake
 from hospital_extractor.schema.discovery import format_dataset_summary
 from hospital_extractor.storage import write_dataset
 from hospital_extractor.utils.logging import configure_logging
@@ -60,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--export",
         action="store_true",
-        help="Run extraction and export JSON/Excel/CSV after the crawl",
+        help="Run extraction and export the master intake JSON/CSV/XLSX after the crawl",
     )
     return parser
 
@@ -114,25 +119,36 @@ def _extract_and_export(report: CrawlReport, target_url: str, output_dir: str) -
         pages_failed=report.failed,
         pages_skipped=report.skipped,
     )
-    dataset = build_dataset(pages, target_url=target_url, crawl_stats=crawl_stats)
+    config = load_config()
+    dataset = build_dataset(pages, target_url=target_url, crawl_stats=crawl_stats, config=config)
 
     export_root = Path(output_dir) / "export"
     basename = dataset_basename(dataset)
     json_path = write_dataset(dataset, export_root / f"{basename}.json")
-    excel_path = export_excel(dataset, export_root / f"{basename}.xlsx")
-    csv_dir = export_root / f"{basename}_csv"
-    csv_paths = export_csv(dataset, csv_dir)
+
+    intake = project_intake(dataset)
+    master_dir = export_root / f"{basename}_master"
+    master_csv_path, master_quality_path = export_master_csv(
+        intake,
+        master_dir,
+        boolean_unknown_policy=config.boolean_unknown_policy,
+        dataset=dataset,
+    )
+    master_xlsx_path = export_master_excel(
+        intake,
+        master_dir,
+        boolean_unknown_policy=config.boolean_unknown_policy,
+        dataset=dataset,
+    )
 
     print()
     print(format_dataset_summary(dataset))
     print()
-    print(format_coverage_report(dataset))
-    print()
     print("Exported:")
     print(f"  {json_path}")
-    print(f"  {excel_path}")
-    for path in csv_paths.values():
-        print(f"  {path}")
+    print(f"  {master_csv_path}  (25-column master CSV)")
+    print(f"  {master_xlsx_path}  (master intake XLSX)")
+    print(f"  {master_quality_path}  (quality / provenance report)")
 
 
 def main(argv: list[str] | None = None) -> int:

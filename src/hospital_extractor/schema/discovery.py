@@ -2,8 +2,7 @@
 
 After extraction, only categories with meaningful records and only fields with
 non-null values are part of the output. This module decides which categories
-and fields actually appear, and renders the human-readable dataset summary the
-CLI prints.
+actually appear, and renders the human-readable dataset summary the CLI prints.
 """
 
 from __future__ import annotations
@@ -14,23 +13,9 @@ from hospital_extractor.schema.canonical import CANONICAL_CATEGORIES, CanonicalC
 __all__ = [
     "category_records",
     "discover_categories",
-    "discover_fields",
     "empty_categories",
     "format_dataset_summary",
-    "meaningful_fields",
 ]
-
-_PROVENANCE_FIELDS = frozenset(
-    {
-        "source_url",
-        "page_title",
-        "extracted_at",
-        "context",
-        "extraction_method",
-        "source_strength",
-        "confidence",
-    }
-)
 
 
 def discover_categories(dataset: HospitalDataset) -> list[str]:
@@ -51,31 +36,6 @@ def empty_categories(dataset: HospitalDataset) -> list[str]:
     ]
 
 
-def discover_fields(category: CanonicalCategory, records: list[object]) -> list[str]:
-    """Fields with at least one non-null value across *records*.
-
-    Schema field order is preserved; provenance fields are always included.
-    """
-    present: list[str] = []
-    for field in category.model.model_fields:
-        if field in _PROVENANCE_FIELDS:
-            continue
-        if any(_field_value(record, field) is not None for record in records):
-            present.append(field)
-    return present
-
-
-def meaningful_fields(record: object) -> dict[str, object]:
-    """Non-provenance, non-null fields of *record* (for dynamic field output)."""
-    result: dict[str, object] = {}
-    for field, value in _field_items(record):
-        if field in _PROVENANCE_FIELDS:
-            continue
-        if value is not None:
-            result[field] = value
-    return result
-
-
 def category_records(dataset: HospitalDataset, category: CanonicalCategory) -> list[object]:
     """Records held by *dataset* for *category* (empty list when none)."""
     return _category_records(dataset, category)
@@ -89,19 +49,6 @@ def _category_records(dataset: HospitalDataset, category: CanonicalCategory) -> 
     if category.single_record:
         return records[:1]
     return records
-
-
-def _field_items(record: object) -> list[tuple[str, object]]:
-    if isinstance(record, dict):
-        return [(key, value) for key, value in record.items()]
-    dump = getattr(record, "model_dump", None)
-    if callable(dump):
-        return [(key, value) for key, value in dump().items()]
-    return []
-
-
-def _field_value(record: object, field: str) -> object:
-    return dict(_field_items(record)).get(field)
 
 
 def format_dataset_summary(dataset: HospitalDataset) -> str:

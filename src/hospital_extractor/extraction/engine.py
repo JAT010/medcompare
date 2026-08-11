@@ -19,27 +19,20 @@ from typing import TYPE_CHECKING
 
 from hospital_extractor.config import ExtractionConfig, association_rank
 from hospital_extractor.extraction.accreditations import extract_accreditations
-from hospital_extractor.extraction.awards import extract_awards
 from hospital_extractor.extraction.contact import extract_contact
 from hospital_extractor.extraction.departments import extract_departments
 from hospital_extractor.extraction.doctors import HospitalContext, extract_doctors
-from hospital_extractor.extraction.emergency import extract_emergency_services
 from hospital_extractor.extraction.facilities import extract_facilities
 from hospital_extractor.extraction.hospital import (
     extract_hospital_overview,
     extract_infrastructure,
 )
-from hospital_extractor.extraction.insurance import extract_insurance
-from hospital_extractor.extraction.other import extract_other
 from hospital_extractor.extraction.page_analyzer import AnalyzedPage, analyze_page
 from hospital_extractor.extraction.procedures import extract_procedures
-from hospital_extractor.extraction.programs import extract_programs
-from hospital_extractor.extraction.services import extract_services
 from hospital_extractor.extraction.specialities import extract_specialities
 from hospital_extractor.extraction.tables import extract_table_records
 from hospital_extractor.extraction.technology import extract_technologies
 from hospital_extractor.extraction.treatments import extract_treatments
-from hospital_extractor.extraction.visiting import extract_visiting
 from hospital_extractor.models.dataset import HospitalDataset
 from hospital_extractor.models.quality import DataQuality
 from hospital_extractor.models.source import SourceRecord
@@ -72,22 +65,8 @@ _ROUTING: dict[str, tuple[Callable[..., Sequence[object] | object | None], ...]]
     "treatment": (extract_treatments,),
     "procedure": (extract_procedures,),
     "technology": (extract_technologies,),
-    "emergency": (extract_emergency_services,),
-    "patient_service": (extract_services,),
-    "insurance": (extract_insurance,),
     "accreditation": (extract_accreditations,),
-    "award": (extract_awards,),
-    "program": (extract_programs,),
-    "visiting": (extract_visiting,),
-    "faq": (
-        extract_visiting,
-        extract_insurance,
-        extract_emergency_services,
-        extract_facilities,
-        extract_services,
-        extract_programs,
-        extract_other,
-    ),
+    "faq": (extract_facilities,),
 }
 
 # Classified page category -> canonical category keys it attempts to populate.
@@ -101,22 +80,8 @@ _PAGE_TO_CATEGORY_KEYS: dict[str, tuple[str, ...]] = {
     "treatment": ("treatments",),
     "procedure": ("procedures",),
     "technology": ("technologies",),
-    "emergency": ("emergency_services",),
-    "patient_service": ("patient_services",),
-    "insurance": ("insurance",),
     "accreditation": ("accreditations",),
-    "award": ("awards",),
-    "program": ("programs",),
-    "visiting": ("visiting_information",),
-    "faq": (
-        "visiting_information",
-        "insurance",
-        "emergency_services",
-        "facilities",
-        "patient_services",
-        "programs",
-        "other_information",
-    ),
+    "faq": ("facilities",),
 }
 
 # A fetched page shorter than this is considered chrome/empty, not content that
@@ -203,7 +168,7 @@ def build_dataset(
     attempted = _attempted_category_keys(analyzed)
     _first_pass(analyzed, results, target=target, cfg=cfg)
     hospital_context = _hospital_context(results, target)
-    _second_pass(analyzed, results, context=hospital_context, cfg=cfg)
+    _second_pass(analyzed, results, context=hospital_context)
     _table_pass(analyzed, results)
 
     dataset = _assemble(
@@ -264,7 +229,6 @@ def _second_pass(
     results: dict[str, list[object]],
     *,
     context: HospitalContext,
-    cfg: ExtractionConfig,
 ) -> None:
     for entry in analyzed:
         category = entry.category
@@ -275,8 +239,6 @@ def _second_pass(
         for extractor in extractors:
             if extractor is extract_doctors:
                 records = extract_doctors(entry.page, context)
-            elif extractor is extract_other:
-                records = extract_other(entry.page, min_answer_length=cfg.faq_min_answer_length)
             else:
                 records = extractor(entry.page)
             if records is None:

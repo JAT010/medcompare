@@ -263,9 +263,10 @@ async def _crawl(
     skipped: list[str] = []
     failed: list[str] = []
     max_depth = context.crawl_limits.max_depth
+    processed = 0
 
     while queue:
-        if crawler.pages_fetched >= context.crawl_limits.max_pages:
+        if processed >= context.crawl_limits.max_pages:
             break
         candidate = queue.popleft()
         if candidate.depth > max_depth:
@@ -275,7 +276,10 @@ async def _crawl(
             continue
 
         try:
-            page = await crawler.fetch(candidate.url)
+            if raw_store.exists(run_id, candidate.url):
+                page = raw_store.load(run_id, candidate.url)
+            else:
+                page = await crawler.fetch(candidate.url)
         except FetchError:
             failed.append(candidate.url)
             log.info("page_failed", extra={"url": candidate.url, "reason": "fetch error"})
@@ -298,6 +302,7 @@ async def _crawl(
             continue
 
         fetched_urls.add(candidate.url)
+        processed += 1
         classification = classifier.from_content(
             page.html.decode("utf-8", errors="replace"), candidate.url
         )

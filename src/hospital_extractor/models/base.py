@@ -48,7 +48,7 @@ class NamedEntity(EntityRecord):
     """Common shape for name + category + description entities.
 
     Used by Facility, Department, Speciality, Treatment, Procedure,
-    Technology, PatientService and Program records.
+    Technology and Accreditation records.
     """
 
     name: str | None = None

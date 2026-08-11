@@ -31,6 +31,20 @@ class RawStore:
         """Return True when the page is already cached for the run."""
         return self.path_for(run_id, url).is_file()
 
+    def load(self, run_id: str, url: str) -> FetchedPage:
+        """Read a cached page back as a :class:`FetchedPage`.
+
+        Only HTML pages are stored, so the cached content is treated as
+        ``text/html`` with a 200 status.
+        """
+        return FetchedPage(
+            url=url,
+            status_code=200,
+            html=self.path_for(run_id, url).read_bytes(),
+            final_url=url,
+            content_type="text/html",
+        )
+
     def save(self, run_id: str, page: FetchedPage) -> Path:
         """Write the raw HTML body of *page* and return the file path."""
         path = self.path_for(run_id, page.url)

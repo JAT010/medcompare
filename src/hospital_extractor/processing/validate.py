@@ -124,19 +124,6 @@ def validate_records(category: CanonicalCategory, records: list[Any]) -> Validat
             )
             continue
 
-        if category.key == "other_information" and not (data.get("label") and data.get("value")):
-            result.rejected.append(record)
-            result.issues.append(
-                ValidationIssue(
-                    category.key,
-                    "error",
-                    "other-information needs both label and value",
-                    None,
-                    index,
-                )
-            )
-            continue
-
         if category.key == "hospital" and not (data.get("name") or data.get("website")):
             result.rejected.append(record)
             result.issues.append(

@@ -2,9 +2,9 @@
 
 Duplicates are merged only when the identity evidence is strong: same
 normalized profile URL for doctors, same normalized name (plus year for
-awards/accreditations) for named entities. Records that merely "look similar"
-are preserved, never merged. When two duplicates carry different values for
-the same field the disagreement is surfaced as a :class:`Conflict`, never
+accreditations) for named entities. Records that merely "look similar" are
+preserved, never merged. When two duplicates carry different values for the
+same field the disagreement is surfaced as a :class:`Conflict`, never
 silently resolved.
 """
 
@@ -37,20 +37,15 @@ def identity_key(category: str, record: Any) -> tuple[str, ...] | None:
     """Return a deduplication identity for *record*, or ``None`` to keep it unique."""
     data = _as_dict(record)
     name = normalize_text(data.get("name")) or normalize_text(data.get("label"))
-    if category in {"facilities", "departments", "specialities", "emergency_services",
-                    "patient_services", "programs", "technologies"}:
+    if category in {"facilities", "departments", "specialities", "technologies"}:
         return (name.lower(),) if name else None
     if category in {"treatments", "procedures"}:
         key = name.lower() if name else ""
         speciality = (data.get("speciality") or "").lower()
         return (key, speciality) if name else None
-    if category == "insurance":
-        return (name.lower(),) if name else None
-    if category in {"awards", "accreditations"}:
+    if category in {"accreditations"}:
         year = str(data.get("year") or "")
         return (name.lower(), year) if name else None
-    if category == "other_information":
-        return (name.lower(),) if name else None
     if category == "doctors":
         profile_url = normalize_url_value(data.get("profile_url"))
         if profile_url:
@@ -111,13 +106,3 @@ def _as_dict(record: Any) -> dict[str, Any]:
     if callable(dump):
         return dict(dump(exclude={"extracted_at"}))
     return dict(record)
-
-
-def _source_of(record: Any) -> str:
-    return str(getattr(record, "source_url", ""))
-
-
-def _stringify(value: Any) -> str | None:
-    if value is None:
-        return None
-    return str(value)

@@ -2,8 +2,8 @@
 
 Facilities (pharmacy, blood bank, radiology, parking, ICU, OPD, ...) appear in
 FAQ answers, labelled sections and facility cards. Extraction reuses the
-schema mapper's FAQ vocabulary so a "24x7 Pharmacy" answer lands here while an
-"emergency" answer goes to the Emergency category.
+schema mapper's FAQ vocabulary so a "24x7 Pharmacy" answer lands here; content
+that matches no kept category is dropped.
 """
 
 from __future__ import annotations

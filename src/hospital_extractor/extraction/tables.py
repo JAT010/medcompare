@@ -1,10 +1,10 @@
 """Table extraction: convert published HTML tables into entity records.
 
-Hospital sites publish visiting hours, capacity, department contacts and
-insurance status as tables. Parsing is deliberately conservative: a table is
-only mapped to a category when its header vocabulary is unambiguous, and only
-the columns that match the category's fields are used. Tables without a clear
-header (or without a matching category) are ignored — nothing is guessed.
+Hospital sites publish capacity and department tables. Parsing is deliberately
+conservative: a table is only mapped to a category when its header vocabulary
+is unambiguous, and only the columns that match the category's fields are
+used. Tables without a clear header (or without a matching category) are
+ignored — nothing is guessed.
 """
 
 from __future__ import annotations
@@ -18,9 +18,6 @@ from bs4 import BeautifulSoup, Tag
 from hospital_extractor.extraction.helpers import clean, in_navigation, provenance, text_of
 from hospital_extractor.models.department import Department
 from hospital_extractor.models.infrastructure import Infrastructure
-from hospital_extractor.models.insurance import InsuranceProvider
-from hospital_extractor.models.service import PatientService
-from hospital_extractor.models.visiting import VisitingInformation
 from hospital_extractor.processing.normalize import parse_leading_int
 
 if TYPE_CHECKING:
@@ -39,20 +36,15 @@ _HEADER_TOKENS = (
     "day", "time", "timing", "timings", "hours", "visiting", "opd",
     "department", "doctor", "consultant", "speciality", "name", "contact",
     "phone", "mobile", "email", "address", "location", "facility", "service",
-    "capacity", "bed", "beds", "insurance", "tpa", "cashless", "company",
-    "provider", "status", "availability", "details", "description", "type",
-    "parameter", "category", "particular", "total",
+    "capacity", "bed", "beds", "company", "provider", "status", "availability",
+    "details", "description", "type", "parameter", "category", "particular",
+    "total",
 )
-_VISITING_RE = re.compile(r"\b(visiting|opd)\b", re.I)
 _CAPACITY_RE = re.compile(r"\b(capacity|beds?|bed strength|bed count)\b", re.I)
 _DEPARTMENT_RE = re.compile(r"\b(department|doctor|consultant|speciality)\b", re.I)
 _DEPARTMENT_CONTACT_RE = re.compile(
     r"\b(contact|phone|telephone|mobile|email|timing|opd|location|room)\b", re.I
 )
-_INSURANCE_RE = re.compile(r"\b(insurance|tpa|cashless|provider|company)\b", re.I)
-_SERVICE_RE = re.compile(r"\b(service|facility|amenit)\b", re.I)
-_SERVICE_DETAIL_RE = re.compile(r"\b(availability|timing|hours|status|24)\b", re.I)
-_GOVERNMENT_HINTS = ("cghs", "e-cghs", "ayushman", "pmjay", "eshram", "esic", "govt")
 
 
 @dataclass(frozen=True)
@@ -79,22 +71,14 @@ def classify_table(table: Table) -> str | None:
     """Return the canonical category *table* maps to, or ``None``.
 
     Categories are conservative: the header vocabulary must be unambiguous
-    before a table is trusted. ``visiting`` / ``capacity`` / ``department`` /
-    ``insurance`` / ``service`` are recognized; anything else is ``None``.
+    before a table is trusted. ``capacity`` and ``department`` are recognized;
+    anything else is ``None``.
     """
     headers = " ".join(table.headers)
-    if _VISITING_RE.search(headers) or (
-        _header_has(headers, "day") and _header_has(headers, "time", "timing", "hours")
-    ):
-        return "visiting"
     if _CAPACITY_RE.search(headers):
         return "capacity"
     if _DEPARTMENT_RE.search(headers) and _DEPARTMENT_CONTACT_RE.search(headers):
         return "department"
-    if _INSURANCE_RE.search(headers):
-        return "insurance"
-    if _SERVICE_RE.search(headers) and _SERVICE_DETAIL_RE.search(headers):
-        return "service"
     return None
 
 
@@ -103,20 +87,12 @@ def extract_table_records(page: AnalyzedPage) -> list[object]:
     records: list[object] = []
     for table in page.tables:
         category = classify_table(table)
-        if category == "visiting":
-            record: object | None = _visiting_record(table, page)
-            if record is not None:
-                records.append(record)
-        elif category == "capacity":
+        if category == "capacity":
             record = _capacity_record(table, page)
             if record is not None:
                 records.append(record)
         elif category == "department":
             records.extend(_department_record(table, page))
-        elif category == "insurance":
-            records.extend(_insurance_record(table, page))
-        elif category == "service":
-            records.extend(_service_record(table, page))
     return records
 
 
@@ -167,30 +143,6 @@ def _header_score(row: tuple[str, ...]) -> int:
             if re.search(rf"\b{re.escape(token)}\b", lowered):
                 score += 1
     return score
-
-
-def _visiting_record(table: Table, page: AnalyzedPage) -> VisitingInformation | None:
-    day_idx = _column_index(table.headers, "day")
-    time_idx = _column_index(table.headers, "time", "timing", "hours")
-    if time_idx is None:
-        return None
-    opd = bool(re.search(r"\bopd\b", " ".join(table.headers), re.I))
-    parts: list[str] = []
-    for row in table.rows:
-        time_value = _cell(row, time_idx)
-        if not time_value:
-            continue
-        day_value = _cell(row, day_idx) if day_idx is not None else ""
-        parts.append(f"{day_value}: {time_value}" if day_value else time_value)
-    if not parts:
-        return None
-    value = "; ".join(parts)
-    data = {"opd_hours" if opd else "visiting_hours": value}
-    return VisitingInformation(
-        **data,
-        **provenance(page.url, title=page.title, method="table", strength="medium",
-                      context=value[:300]),
-    )
 
 
 def _capacity_record(table: Table, page: AnalyzedPage) -> Infrastructure | None:
@@ -271,66 +223,6 @@ def _department_record(table: Table, page: AnalyzedPage) -> list[Department]:
     return records
 
 
-def _insurance_record(table: Table, page: AnalyzedPage) -> list[InsuranceProvider]:
-    name_idx = _column_index(table.headers, "insurance", "tpa", "cashless", "provider",
-                             "company", "name")
-    if name_idx is None:
-        return []
-    cashless_idx = _column_index(table.headers, "cashless")
-    tpa_idx = _column_index(table.headers, "tpa")
-    records: list[InsuranceProvider] = []
-    for row in table.rows:
-        name = clean(_cell(row, name_idx))
-        if not name:
-            continue
-        row_text = " ".join(cell for cell in row)
-        cashless = _affirmative(_cell(row, cashless_idx)) if cashless_idx is not None else (
-            "Yes" if _has_keyword(row_text, "cashless") else None
-        )
-        tpa = _affirmative(_cell(row, tpa_idx)) if tpa_idx is not None else (
-            "Yes" if _has_keyword(row_text, "tpa") else None
-        )
-        government = _government_flag(name, row_text)
-        if cashless is None and tpa is None and government is None and not _has_keyword(
-            name, "insurance"
-        ):
-            continue
-        records.append(InsuranceProvider(
-            name=name,
-            cashless=cashless,
-            tpa=tpa,
-            government_scheme=government,
-            **provenance(page.url, title=page.title, method="table", strength="medium",
-                          context=row_text[:300]),
-        ))
-    return records
-
-
-def _service_record(table: Table, page: AnalyzedPage) -> list[PatientService]:
-    name_idx = _column_index(table.headers, "service", "facility", "amenit", "name")
-    if name_idx is None:
-        return []
-    avail_idx = _column_index(table.headers, "availability", "timing", "timings", "hours", "status")
-    desc_idx = _column_index(table.headers, "description", "details", "remarks")
-    records: list[PatientService] = []
-    for row in table.rows:
-        name = clean(_cell(row, name_idx))
-        if not name:
-            continue
-        availability = None
-        if avail_idx is not None:
-            availability = _availability(_cell(row, avail_idx))
-        description = clean(_cell(row, desc_idx)) if desc_idx is not None else None
-        records.append(PatientService(
-            name=name,
-            availability=availability,
-            description=description,
-            **provenance(page.url, title=page.title, method="table", strength="medium",
-                          context="; ".join(cell for cell in row)[:300]),
-        ))
-    return records
-
-
 def _column_index(headers: tuple[str, ...], *tokens: str) -> int | None:
     """Index of the first header that starts with any *tokens* (word prefix).
 
@@ -348,30 +240,3 @@ def _cell(row: tuple[str, ...], index: int | None) -> str:
     if index is None or index >= len(row):
         return ""
     return row[index]
-
-
-def _header_has(headers: str, *tokens: str) -> bool:
-    lowered = headers.lower()
-    return any(re.search(rf"\b{re.escape(token)}\b", lowered) for token in tokens)
-
-
-def _has_keyword(text: str, keyword: str) -> bool:
-    return bool(re.search(rf"\b{re.escape(keyword)}\b", text, re.I))
-
-
-def _affirmative(value: str) -> str | None:
-    lowered = value.strip().lower()
-    if lowered in ("yes", "y", "true") or lowered.startswith("yes "):
-        return "Yes"
-    return None
-
-
-def _availability(value: str) -> str | None:
-    if re.search(r"24\s*[x/]\s*7|available|open all day", value, re.I):
-        return "24/7"
-    return None
-
-
-def _government_flag(*parts: str) -> str | None:
-    text = " ".join(part.lower() for part in parts if part)
-    return "Yes" if any(hint in text for hint in _GOVERNMENT_HINTS) else None

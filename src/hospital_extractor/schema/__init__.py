@@ -10,15 +10,10 @@ from hospital_extractor.schema.canonical import (
 )
 from hospital_extractor.schema.discovery import (
     discover_categories,
-    discover_fields,
     empty_categories,
     format_dataset_summary,
 )
-from hospital_extractor.schema.mapper import (
-    FAQ_ROUTES,
-    route_faq_question,
-    route_section_keyword,
-)
+from hospital_extractor.schema.mapper import FAQ_ROUTES, route_faq_question
 
 __all__ = [
     "CANONICAL_CATEGORIES",
@@ -27,9 +22,7 @@ __all__ = [
     "FAQ_ROUTES",
     "category_for",
     "discover_categories",
-    "discover_fields",
     "empty_categories",
     "format_dataset_summary",
     "route_faq_question",
-    "route_section_keyword",
 ]

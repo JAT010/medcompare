@@ -16,6 +16,7 @@ from hospital_extractor.extraction.helpers import (
     blocks_of,
     clean,
     first_block_value,
+    first_text,
     provenance,
     text_of,
 )
@@ -80,11 +81,11 @@ def extract_hospital_overview(
     jsonld_blocks = _rank_blocks(page, blocks_of(page.jsonld, *_HOSPITAL_TYPES))
     about = find_about_text(page)
 
-    name = first_block_value(jsonld_blocks, "name") or _anchor_name(page)
+    name = _preferred_name(page, jsonld_blocks)
     if not name:
         return None
 
-    description = first_block_value(jsonld_blocks, "description") or about
+    description = _preferred_description(page, jsonld_blocks, about)
     hospital_type = _hospital_type(about)
     parent = _parent_organization(about, jsonld_blocks)
     established = _established_year(about)
@@ -166,6 +167,77 @@ def _anchor_name(page: AnalyzedPage) -> str | None:
         if level == "h1":
             return value
     return None
+
+
+def _preferred_name(page: AnalyzedPage, jsonld_blocks: list[dict[str, Any]]) -> str | None:
+    """Best hospital name for the anchor page.
+
+    The page-level JSON-LD block (URL matching the page, or a concrete
+    ``Hospital``/``MedicalClinic``/``LocalBusiness`` type) names the specific
+    hospital and wins. When only a network-level ``MedicalOrganization`` block
+    exists (its ``url`` is the site root), the block name is the parent brand
+    ("Max Healthcare"), not this hospital — so the page's own H1 is preferred
+    when it looks like a hospital name.
+    """
+    for block in jsonld_blocks:
+        if _is_page_level(block, page):
+            value = first_text(block, "name")
+            if value:
+                return value
+    anchor = _anchor_name(page)
+    if anchor and _looks_like_hospital_name(anchor):
+        return anchor
+    return first_block_value(jsonld_blocks, "name") or anchor
+
+
+def _preferred_description(
+    page: AnalyzedPage,
+    jsonld_blocks: list[dict[str, Any]],
+    about: str | None,
+) -> str | None:
+    """Best hospital description: page-level JSON-LD, then About text, then
+    the network-level block description (last resort)."""
+    for block in jsonld_blocks:
+        if _is_page_level(block, page):
+            value = first_text(block, "description")
+            if value:
+                return value
+    if about:
+        return about
+    return first_block_value(jsonld_blocks, "description")
+
+
+def _is_page_level(block: dict[str, Any], page: AnalyzedPage) -> bool:
+    """True when a JSON-LD block describes this page's hospital, not the network.
+
+    A block whose ``url`` matches the anchor page is page-level; a concrete
+    hospital type (``Hospital``/``MedicalClinic``/``LocalBusiness``) is page
+    level even without a URL, while a bare ``MedicalOrganization``/``Organization``
+    is the network and not page-specific.
+    """
+    url = block.get("url")
+    if isinstance(url, str) and _same_url(page.url, url):
+        return True
+    return block.get("@type") in ("Hospital", "MedicalClinic", "LocalBusiness")
+
+
+_HOSPITAL_NAME_HINTS = (
+    "hospital",
+    "clinic",
+    "medical",
+    "health",
+    "care",
+    "centre",
+    "center",
+    "institute",
+    "nursing",
+    "specialit",
+)
+
+
+def _looks_like_hospital_name(value: str) -> bool:
+    lowered = value.lower()
+    return any(hint in lowered for hint in _HOSPITAL_NAME_HINTS)
 
 
 def _rank_blocks(page: AnalyzedPage, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:

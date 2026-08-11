@@ -37,6 +37,22 @@ _APPOINTMENT_LABELS = (
 )
 _PHONE_RE = re.compile(r"[+()\d][\d\s().-]{7,}\d")
 
+_ADDRESS_TEXT_RE = re.compile(r"\baddress\s*[-:]\s*(.+)", re.I)
+_ADDRESS_BOILERPLATE_RE = re.compile(
+    r"\b(read less|read more|view on map|directions|get directions)\b", re.I
+)
+_POSTAL_RE = re.compile(r"\b\d{6}\b")
+_STATE_HINTS = (
+    "andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh",
+    "goa", "gujarat", "haryana", "himachal pradesh", "jharkhand", "karnataka",
+    "kerala", "madhya pradesh", "maharashtra", "manipur", "meghalaya",
+    "mizoram", "nagaland", "odisha", "orissa", "punjab", "rajasthan", "sikkim",
+    "tamil nadu", "telangana", "tripura", "uttar pradesh", "uttarakhand",
+    "west bengal", "delhi", "nct of delhi", "chandigarh", "puducherry",
+    "jammu and kashmir", "ladakh", "andaman and nicobar", "lakshadweep",
+    "dadra and nagar haveli", "daman and diu",
+)
+
 
 def extract_contact(page: AnalyzedPage) -> Contact | None:
     """Extract one contact record from *page* (or ``None``)."""
@@ -149,9 +165,14 @@ def _from_html(page: AnalyzedPage, data: dict[str, Any]) -> None:
                 data.setdefault("maps_url", href)
                 break
     if data.get("address") is None:
+        text_address = _text_address(page)
         address = _visible_address(page) or _address_link_address(page) or _address_element(page)
+        if text_address and address is None:
+            address = text_address
         if address:
             data["address"] = address
+        if address == text_address and text_address:
+            _components_from_text(text_address, data)
 
 
 def _visible_address(page: AnalyzedPage) -> str | None:
@@ -267,6 +288,115 @@ def _labelled_phone(page: AnalyzedPage, labels: tuple[str, ...]) -> str | None:
 def _looks_like_year(value: str) -> bool:
     digits = "".join(ch for ch in value if ch.isdigit())
     return len(digits) == 4 and value.isdigit()
+
+
+def _text_address(page: AnalyzedPage) -> str | None:
+    """Best address in visible text, e.g. ``Address - 1,2, ... 110017``.
+
+    Runs when JSON-LD has no address and no semantic address element exists.
+    Only matches an explicit ``Address`` label and trims trailing boilerplate
+    ("Read Less", "View on Map", ...) so the captured value is just the street
+    address.
+    """
+    for paragraph in page.paragraphs:
+        match = _ADDRESS_TEXT_RE.search(paragraph)
+        if not match:
+            continue
+        value = clean(match.group(1))
+        if not value:
+            continue
+        value = _trim_address_boilerplate(value)
+        if _looks_like_address(value):
+            return value
+    for section in page.sections:
+        match = _ADDRESS_TEXT_RE.search(section.text)
+        if not match:
+            continue
+        value = clean(match.group(1))
+        if not value:
+            continue
+        value = _trim_address_boilerplate(value)
+        if _looks_like_address(value):
+            return value
+    return None
+
+
+def _trim_address_boilerplate(value: str) -> str:
+    match = _ADDRESS_BOILERPLATE_RE.search(value)
+    if match:
+        value = value[: match.start()]
+    return clean(value.rstrip(".,; ")) or value
+
+
+def _looks_like_address(value: str) -> bool:
+    """Conservative gate: the captured text must read like a street address.
+
+    Requires at least one digit and either a 6-digit PIN or a comma-separated
+    multi-part address, so a lone word after "Address -" is rejected.
+    """
+    if len(value) < 8 or not any(ch.isdigit() for ch in value):
+        return False
+    if _POSTAL_RE.search(value):
+        return True
+    return "," in value or ("road" in value.lower() or "marg" in value.lower())
+
+
+def _components_from_text(value: str, data: dict[str, Any]) -> None:
+    """Derive postal code / state / city from a text address, when present."""
+    postal = _postal_code(value)
+    if postal:
+        data.setdefault("postal_code", postal)
+    state = _state(value)
+    if state:
+        data.setdefault("state", state)
+    city = _city(value, data.get("state"))
+    if city:
+        data.setdefault("city", city)
+
+
+def _postal_code(value: str) -> str | None:
+    match = _POSTAL_RE.search(value)
+    if not match:
+        return None
+    candidate = match.group(0)
+    return clean(candidate)
+
+
+def _state(value: str) -> str | None:
+    """State token in a text address, preferring the trailing one (the final
+    ``..., <city>, <state> <PIN>`` form most Indian sites use)."""
+    lowered = value.lower()
+    best: tuple[int, str] | None = None
+    for hint in _STATE_HINTS:
+        for match in re.finditer(rf"\b{re.escape(hint)}\b", lowered):
+            if hint == "delhi" and _is_within("new delhi", lowered, match.start()):
+                continue
+            if best is None or match.start() > best[0]:
+                best = (match.start(), hint)
+    if best is None:
+        return None
+    return best[1].title()
+
+
+def _is_within(phrase: str, text: str, position: int) -> bool:
+    start = max(0, position - len(phrase))
+    end = min(len(text), position + len(phrase))
+    return phrase in text[start:end]
+
+
+def _city(value: str, state: str | None) -> str | None:
+    """Best city token in a text address: the segment before the state."""
+    if not state:
+        return None
+    lowered = value.lower()
+    marker = lowered.rfind(state.lower())
+    if marker < 0:
+        return None
+    before = value[:marker]
+    parts = [clean(p) for p in re.split(r"[,\n]", before) if clean(p)]
+    if not parts:
+        return None
+    return parts[-1]
 
 
 def _float(value: object) -> float | None:
