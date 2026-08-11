@@ -24,3 +24,4 @@ class HospitalOverview(EntityRecord):
     speciality_count: int | None = None
     department_count: int | None = None
     website: str | None = None
+    logo_url: str | None = None

@@ -9,6 +9,7 @@ class Contact(EntityRecord):
     """Postal address, phones, emails and geo coordinates for a hospital."""
 
     address: str | None = None
+    locality: str | None = None
     city: str | None = None
     state: str | None = None
     country: str | None = None

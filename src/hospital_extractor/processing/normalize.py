@@ -35,7 +35,7 @@ _TEXT_ONLY_FIELDS = frozenset(
 )
 _EMAIL_FIELDS = frozenset({"email", "emergency_email"})
 _PHONE_FIELDS = frozenset({"phone", "emergency_phone", "appointment_phone", "contact"})
-_URL_FIELDS = frozenset({"website", "profile_url", "maps_url", "source_url"})
+_URL_FIELDS = frozenset({"website", "profile_url", "maps_url", "source_url", "logo_url"})
 _YEAR_FIELDS = frozenset({"year"})
 _INT_FIELDS = frozenset(
     {

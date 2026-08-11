@@ -44,6 +44,8 @@ def extract_contact(page: AnalyzedPage) -> Contact | None:
     data: dict[str, Any] = {}
     _from_jsonld(blocks, data)
     _from_html(page, data)
+    if data.get("locality") is None:
+        data.setdefault("locality", _locality(page, blocks, data))
     if not any(value is not None for value in data.values()):
         return None
     return Contact(
@@ -75,6 +77,9 @@ def _from_jsonld(blocks: list[dict[str, Any]], data: dict[str, Any]) -> None:
             data.setdefault("state", clean(address.get("addressRegion")))
             data.setdefault("country", clean(address.get("addressCountry")))
             data.setdefault("postal_code", clean(str(address.get("postalCode"))))
+            locality = _jsonld_locality(address)
+            if locality:
+                data.setdefault("locality", locality)
         if isinstance(address, str):
             data.setdefault("address", clean(address))
         geo = block.get("geo")
@@ -146,7 +151,7 @@ def _from_html(page: AnalyzedPage, data: dict[str, Any]) -> None:
     if data.get("address") is None:
         address = _visible_address(page) or _address_link_address(page) or _address_element(page)
         if address:
-            data.setdefault("address", address)
+            data["address"] = address
 
 
 def _visible_address(page: AnalyzedPage) -> str | None:
@@ -171,6 +176,75 @@ def _address_element(page: AnalyzedPage) -> str | None:
         value = clean(text_of(node))
         if value:
             return value
+    return None
+
+
+def _jsonld_locality(address: dict[str, Any]) -> str | None:
+    """Locality (area/neighbourhood) from a JSON-LD address object, if any."""
+    for key in ("neighborhood", "subLocality", "subArea", "locality", "area"):
+        value = address.get(key)
+        if isinstance(value, str):
+            cleaned = clean(value)
+            if cleaned:
+                return cleaned
+    return None
+
+
+def _locality(page: AnalyzedPage, blocks: list[dict[str, Any]], data: dict[str, Any]) -> str | None:
+    """Best locality signal on the page: JSON-LD, labelled element, label
+    pattern, then the address segment preceding a known city."""
+    for block in blocks:
+        address = block.get("address")
+        if isinstance(address, dict):
+            locality = _jsonld_locality(address)
+            if locality:
+                return locality
+    for node in page.soup.find_all(True):
+        classes = " ".join(c for c in node.get("class") or [])
+        id_value = node.get("id")
+        id_attr = " ".join(id_value) if isinstance(id_value, list) else str(id_value or "")
+        marker = classes + " " + id_attr
+        if not re.search(r"\b(locality|neighbo[u]?rhood|sub[- ]?area)\b", marker, re.I):
+            continue
+        value = clean(text_of(node))
+        if value and len(value) <= 60:
+            return value
+    for paragraph in page.paragraphs[:15]:
+        match = re.search(
+            r"\b(?:locality|area|neighborhood|neighbourhood)\s*[:\-]\s*([^,;]{2,60})",
+            paragraph,
+            re.I,
+        )
+        if match:
+            candidate = clean(match.group(1))
+            if candidate and len(candidate) <= 60:
+                return candidate
+    return _locality_from_address(data)
+
+
+def _locality_from_address(data: dict[str, Any]) -> str | None:
+    """The address segment directly before a known city, e.g. the
+    "Koregaon Park" in "Lane 3, Koregaon Park, Pune, Maharashtra"."""
+    address = data.get("address")
+    city = data.get("city")
+    if not isinstance(address, str) or not isinstance(city, str):
+        return None
+    city = clean(city) or ""
+    if not city:
+        return None
+    city_lower = city.lower()
+    parts = [p for p in (clean(part) for part in re.split(r"[,\n]", address)) if p]
+    for index, part in enumerate(parts):
+        if part.lower().rstrip(".") != city_lower:
+            continue
+        if index == 0:
+            return None
+        candidate = parts[index - 1]
+        if not candidate or len(candidate) > 60:
+            return None
+        if re.match(r"^\d", candidate):
+            return None
+        return candidate
     return None
 
 

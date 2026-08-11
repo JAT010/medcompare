@@ -24,6 +24,7 @@ from hospital_extractor.models.hospital import HospitalOverview
 from hospital_extractor.models.infrastructure import Infrastructure
 from hospital_extractor.processing.normalize import parse_leading_int, parse_year
 from hospital_extractor.utils.text import dedupe_sequential
+from hospital_extractor.utils.urls import resolve_url
 
 __all__ = ["extract_hospital_overview", "extract_infrastructure", "find_about_text"]
 
@@ -89,6 +90,7 @@ def extract_hospital_overview(
     established = _established_year(about)
     status = _status(page)
     website = _website(page, jsonld_blocks, website)
+    logo_url = _logo_url(page, jsonld_blocks)
 
     data = {
         "name": name,
@@ -98,6 +100,7 @@ def extract_hospital_overview(
         "established_year": established,
         "status": status,
         "website": website,
+        "logo_url": logo_url,
     }
     data.update(_counts(about))
     record = HospitalOverview(
@@ -253,6 +256,45 @@ def _website(
         if isinstance(same_as, str) and clean(same_as):
             return clean(same_as)
     return fallback
+
+
+def _logo_url(page: AnalyzedPage, jsonld_blocks: list[dict[str, Any]]) -> str | None:
+    """Best logo URL for the hospital: JSON-LD ``logo``, favicon, header img.
+
+    URLs are resolved against the page and normalized; ``None`` when nothing
+    usable is found.
+    """
+    for block in jsonld_blocks:
+        logo = block.get("logo")
+        if isinstance(logo, str):
+            resolved = resolve_url(page.url, logo)
+            if resolved:
+                return resolved
+        if isinstance(logo, dict):
+            for key in ("url", "contentUrl"):
+                value = logo.get(key)
+                if isinstance(value, str):
+                    resolved = resolve_url(page.url, value)
+                    if resolved:
+                        return resolved
+    for link in page.soup.find_all("link", rel=True):
+        rel = link.get("rel")
+        rels = rel if isinstance(rel, list) else [rel]
+        if any("icon" in str(r).lower() for r in rels):
+            href = link.get("href")
+            if isinstance(href, str):
+                resolved = resolve_url(page.url, href)
+                if resolved:
+                    return resolved
+    header = page.soup.find("header") or page.soup.find("nav")
+    if header is not None:
+        for img in header.find_all("img"):
+            src = img.get("src")
+            if isinstance(src, str):
+                resolved = resolve_url(page.url, src)
+                if resolved:
+                    return resolved
+    return None
 
 
 def _counts(about: str | None) -> dict[str, int | None]:
