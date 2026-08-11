@@ -18,6 +18,26 @@ from urllib.parse import urlsplit
 
 from hospital_extractor.utils.urls import is_fetchable, is_same_domain
 
+# Tracking / analytics query parameters that add no content and cause
+# query-string explosion. URLs carrying them are not eligible for fetching;
+# together with path-based deduplication they keep one page from being crawled
+# once per campaign.
+DEFAULT_BLOCKED_QUERY_PARAMS = (
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "fbclid",
+    "gclid",
+    "gclsrc",
+    "yclid",
+    "igshid",
+    "mkt_tok",
+    "mc_cid",
+    "mc_eid",
+)
+
 
 @dataclass(frozen=True)
 class RobotsRule:

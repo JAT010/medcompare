@@ -38,7 +38,7 @@ _BOOLEAN_RECORD_RULES: tuple[tuple[str, tuple[str, ...], re.Pattern[str]], ...] 
     (
         "da_vinci_robotic_surgery",
         ("technologies", "facilities"),
-        re.compile(r"da\s+vinci|robotic surgery|robot", re.I),
+        re.compile(r"da\s+vinci", re.I),
     ),
     (
         "advanced_laparoscopy_mis",

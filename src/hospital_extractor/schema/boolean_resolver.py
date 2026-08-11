@@ -53,8 +53,10 @@ def negate(term: str) -> str:
 
 # regex term strings, one per recognisable feature; the yes corpus and every
 # detector share these so the two can never drift apart.
+# Conservative by design: only explicit evidence counts. "robotic surgery"
+# alone does not prove a Da Vinci system, so it is not a Da Vinci term.
 _FEATURE_TERMS: dict[str, tuple[str, ...]] = {
-    "da_vinci_robotic_surgery": (r"da\s+vinci", r"robotic\s+surgery"),
+    "da_vinci_robotic_surgery": (r"da\s+vinci",),
     "advanced_laparoscopy_mis": (
         r"laparoscopy",
         r"laparoscopic",

@@ -2,23 +2,35 @@
 
 Binds every stage of the discovery/crawl phase into a single callable flow:
 
-``probe (with UA fallback) → robots → sitemap discovery → candidate scoping →
-polite crawl → classification → raw storage → report``
+``probe (with UA fallback) → robots → sitemap discovery → targeted candidate
+selection → polite crawl (priority-ordered, content-verified) → classification
+→ raw storage → report``
 
 The runner never fabricates data and never bypasses robots, authentication or
 bot protection. A failed page is recorded and the crawl continues; only a
 hard access block or exhausted limits stop the run.
+
+Candidate selection is targeted: every discovered URL is scored against the
+25-field intake vocabulary, low-value sections (blogs, news, careers,
+appointment flows, privacy/terms...) are excluded, sibling branches of the
+same hospital chain are dropped, and the crawl queue is budget-truncated to
+the highest-relevance pages. The extraction engine decides the final field
+values; this phase only decides which pages to fetch.
 """
 
 from __future__ import annotations
 
+import heapq
 import logging
-from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urljoin
 
-from hospital_extractor.crawler.candidates import SOURCE_INTERNAL_LINK, CandidatePage
+from hospital_extractor.crawler.candidates import (
+    SOURCE_INTERNAL_LINK,
+    CandidatePage,
+    SkipRecord,
+)
 from hospital_extractor.crawler.classify import PageClassifier, is_low_value_category
 from hospital_extractor.crawler.context import CrawlContext
 from hospital_extractor.crawler.crawler import (
@@ -36,8 +48,10 @@ from hospital_extractor.crawler.discovery import (
     scope_rank,
 )
 from hospital_extractor.crawler.metadata import PageMetadata, build_metadata
+from hospital_extractor.crawler.relevance import RelevanceScorer, select_candidates
 from hospital_extractor.crawler.report import CrawlReport
 from hospital_extractor.crawler.url_filter import (
+    DEFAULT_BLOCKED_QUERY_PARAMS,
     RobotsPolicy,
     UrlFilter,
     parse_robots_txt,
@@ -89,7 +103,11 @@ async def run_crawl(
         )
 
     robots_policy = await _load_robots(crawler, context, selected_ua, log=log)
-    url_filter = UrlFilter(context.target_url, robots=robots_policy)
+    url_filter = UrlFilter(
+        context.target_url,
+        robots=robots_policy,
+        block_query_params=DEFAULT_BLOCKED_QUERY_PARAMS,
+    )
 
     discovery = await discover_sitemap_candidates(
         _resource_fetcher(crawler),
@@ -100,36 +118,59 @@ async def run_crawl(
         log.info("sitemap_loaded", extra={"sitemap_url": url})
 
     classifier = PageClassifier()
-    candidates = _scope_candidates(
+    scorer = RelevanceScorer(
+        context.target_url,
+        target_identity=context.target_hospital_identity,
+    )
+    selection = select_candidates(
         discovery.candidates,
-        context,
+        target_url=context.target_url,
+        target_identity=context.target_hospital_identity,
+        budget=context.crawl_limits.max_pages,
+        min_score=context.crawl_limits.enqueue_min_score,
+        scorer=scorer,
         url_filter=url_filter,
         classifier=classifier,
         include_low_value=include_low_value,
         log=log,
     )
 
-    pages, skipped, failed = await _crawl(
+    pages, crawled_skipped, failed = await _crawl(
         crawler,
-        candidates,
+        selection.selected,
         context=context,
         raw_store=raw_store,
         run_id=run_key,
         url_filter=url_filter,
         classifier=classifier,
+        scorer=scorer,
         include_low_value=include_low_value,
         log=log,
     )
     await crawler.aclose()
 
-    log.info("crawl_finished", extra={"fetched": len(pages), "failed": len(failed)})
+    skipped = [*selection.skipped, *crawled_skipped]
+    log.info(
+        "crawl_finished",
+        extra={
+            "discovered": len(selection.discovered_urls),
+            "candidates": len(selection.candidates),
+            "selected": len(selection.selected),
+            "fetched": len(pages),
+            "skipped": len(skipped),
+            "failed": len(failed),
+        },
+    )
     return CrawlReport(
         context=context,
         probe=probe,
         robots_url=urljoin(context.target_url, "/robots.txt"),
         robots_policy=robots_policy,
         sitemap_urls=discovery.sitemap_urls,
-        candidates=candidates,
+        discovered_urls=selection.discovered_urls,
+        candidates=selection.candidates,
+        selected_urls=selection.selected,
+        selection_scores=selection.scores,
         pages=pages,
         skipped_urls=skipped,
         failed_urls=failed,
@@ -202,48 +243,6 @@ async def _load_robots(
     return policy
 
 
-def _scope_candidates(
-    candidates: list[CandidatePage],
-    context: CrawlContext,
-    *,
-    url_filter: UrlFilter,
-    classifier: PageClassifier,
-    include_low_value: bool,
-    log: logging.Logger,
-) -> list[CandidatePage]:
-    """Filter candidates and order them by hospital scope."""
-    eligible: list[CandidatePage] = []
-    for candidate in candidates:
-        decision = url_filter.decision(candidate.url)
-        if not decision.allowed:
-            log.info("candidate_skipped", extra={"url": candidate.url, "reason": decision.reason})
-            continue
-        preliminary = classifier.from_url(candidate.url)
-        candidate = CandidatePage(
-            url=candidate.url,
-            source_of_discovery=candidate.source_of_discovery,
-            sitemap_name=candidate.sitemap_name,
-            parent_url=candidate.parent_url,
-            depth=candidate.depth,
-            preliminary_category=preliminary.category,
-        )
-        if is_low_value_category(preliminary.category) and not include_low_value:
-            log.info(
-                "candidate_skipped",
-                extra={
-                    "url": candidate.url,
-                    "reason": f"low-value category {preliminary.category}",
-                },
-            )
-            continue
-        log.info("candidate_discovered", extra={"url": candidate.url})
-        eligible.append(candidate)
-
-    slug = context.target_hospital_identity
-    eligible.sort(key=lambda c: (scope_rank(c.url, slug, None), c.url))
-    return eligible
-
-
 async def _crawl(
     crawler: Crawler,
     candidates: list[CandidatePage],
@@ -253,36 +252,68 @@ async def _crawl(
     run_id: str,
     url_filter: UrlFilter,
     classifier: PageClassifier,
+    scorer: RelevanceScorer,
     include_low_value: bool,
     log: logging.Logger,
-) -> tuple[list[PageMetadata], list[str], list[str]]:
-    queue: deque[CandidatePage] = deque(candidates)
-    enqueued: set[str] = {candidate.url for candidate in candidates}
+) -> tuple[list[PageMetadata], list[SkipRecord], list[str]]:
+    """Crawl candidates in relevance order, verifying content after each fetch.
+
+    The queue is a max-priority heap ordered by selection score, then hospital
+    scope, then URL. Pages whose fetched content turns out to be a
+    non-evidence page (e.g. a blog post whose URL did not look like one) are
+    skipped and their children are never enqueued, which prevents recursive
+    crawling of irrelevant sections.
+    """
+    max_depth = context.crawl_limits.max_depth
+    min_score = context.crawl_limits.enqueue_min_score
+    target_url = context.target_url
+
+    heap: list[tuple[float, int, str, int, CandidatePage]] = []
+    counter = 0
+    enqueued: set[str] = set()
+
+    def _push(candidate: CandidatePage) -> None:
+        nonlocal counter
+        heapq.heappush(
+            heap,
+            (
+                -(candidate.selection_score or 0.0),
+                scope_rank(candidate.url, context.target_hospital_identity, None),
+                candidate.url,
+                counter,
+                candidate,
+            ),
+        )
+        enqueued.add(candidate.url)
+        counter += 1
+
+    for candidate in candidates:
+        _push(candidate)
+
     fetched_urls: set[str] = set()
     pages: list[PageMetadata] = []
-    skipped: list[str] = []
+    skipped: list[SkipRecord] = []
     failed: list[str] = []
-    max_depth = context.crawl_limits.max_depth
     processed = 0
 
-    while queue:
+    while heap:
         if processed >= context.crawl_limits.max_pages:
             break
-        candidate = queue.popleft()
+        _, _, url, _, candidate = heapq.heappop(heap)
         if candidate.depth > max_depth:
-            skipped.append(candidate.url)
+            skipped.append(SkipRecord(url, "max depth exceeded"))
             continue
-        if candidate.url in fetched_urls:
+        if url in fetched_urls:
             continue
 
         try:
-            if raw_store.exists(run_id, candidate.url):
-                page = raw_store.load(run_id, candidate.url)
+            if raw_store.exists(run_id, url):
+                page = raw_store.load(run_id, url)
             else:
-                page = await crawler.fetch(candidate.url)
+                page = await crawler.fetch(url)
         except FetchError:
-            failed.append(candidate.url)
-            log.info("page_failed", extra={"url": candidate.url, "reason": "fetch error"})
+            failed.append(url)
+            log.info("page_failed", extra={"url": url, "reason": "fetch error"})
             continue
         except MaxPagesError:
             break
@@ -290,22 +321,31 @@ async def _crawl(
             break
 
         if not page.is_html or page.status_code >= 400:
-            skipped.append(candidate.url)
+            skipped.append(SkipRecord(url, f"non-HTML or status {page.status_code}"))
             log.info(
                 "candidate_skipped",
                 extra={
-                    "url": candidate.url,
+                    "url": url,
                     "status": page.status_code,
                     "content_type": page.content_type,
                 },
             )
             continue
 
-        fetched_urls.add(candidate.url)
+        html = page.html.decode("utf-8", errors="replace")
+        verification = scorer.score_content(html, url)
+        if verification.excluded:
+            reason = verification.exclusion_reason or "content excluded"
+            skipped.append(SkipRecord(url, f"content: {reason}"))
+            log.info(
+                "page_content_excluded",
+                extra={"url": url, "reason": reason},
+            )
+            continue
+
+        fetched_urls.add(url)
         processed += 1
-        classification = classifier.from_content(
-            page.html.decode("utf-8", errors="replace"), candidate.url
-        )
+        classification = classifier.from_content(html, url)
         raw_path = raw_store.save(run_id, page)
         metadata = build_metadata(
             page,
@@ -319,7 +359,7 @@ async def _crawl(
         log.info(
             "page_fetched",
             extra={
-                "url": candidate.url,
+                "url": url,
                 "status": page.status_code,
                 "category": classification.category,
             },
@@ -327,7 +367,7 @@ async def _crawl(
         log.info(
             "page_classified",
             extra={
-                "url": candidate.url,
+                "url": url,
                 "category": classification.category,
                 "confidence": classification.confidence,
             },
@@ -335,11 +375,7 @@ async def _crawl(
 
         if candidate.depth >= max_depth:
             continue
-        links = extract_internal_links(
-            page.html.decode("utf-8", errors="replace"),
-            context.target_url,
-            url_filter=url_filter,
-        )
+        links = extract_internal_links(html, context.target_url, url_filter=url_filter)
         added = 0
         for link in links:
             if added >= MAX_INTERNAL_LINKS_PER_PAGE or len(enqueued) >= MAX_QUEUE_SIZE:
@@ -347,19 +383,30 @@ async def _crawl(
             if link in enqueued or link in fetched_urls:
                 continue
             preliminary = classifier.from_url(link)
-            if is_low_value_category(preliminary.category) and not include_low_value:
+            relevance = scorer.score_url(link)
+            if relevance.excluded:
+                skipped.append(SkipRecord(link, relevance.exclusion_reason or "excluded"))
                 continue
-            enqueued.add(link)
-            queue.append(
+            if is_low_value_category(preliminary.category) and not include_low_value:
+                skipped.append(SkipRecord(link, f"low-value category {preliminary.category}"))
+                continue
+            if link != target_url and (relevance.score or 0.0) < min_score:
+                skipped.append(SkipRecord(link, "below minimum relevance threshold"))
+                continue
+            _push(
                 CandidatePage(
                     url=link,
                     source_of_discovery=SOURCE_INTERNAL_LINK,
-                    parent_url=candidate.url,
+                    parent_url=url,
                     depth=candidate.depth + 1,
                     preliminary_category=preliminary.category,
+                    selection_score=relevance.score,
                 )
             )
             added += 1
-            log.info("candidate_discovered", extra={"url": link, "parent": candidate.url})
+            log.info(
+                "candidate_discovered",
+                extra={"url": link, "parent": url, "score": relevance.score},
+            )
 
     return pages, skipped, failed

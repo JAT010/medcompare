@@ -11,7 +11,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from hospital_extractor.crawler.candidates import CandidatePage
+from hospital_extractor.crawler.candidates import CandidatePage, SkipRecord
 from hospital_extractor.crawler.context import CrawlContext
 from hospital_extractor.crawler.crawler import ProbeOutcome, ProbeResult
 from hospital_extractor.crawler.metadata import PageMetadata
@@ -31,15 +31,36 @@ class CrawlReport:
     robots_url: str
     robots_policy: RobotsPolicy | None
     sitemap_urls: tuple[str, ...]
+    discovered_urls: list[str]
     candidates: list[CandidatePage]
+    selected_urls: list[CandidatePage]
+    selection_scores: dict[str, float]
     pages: list[PageMetadata]
-    skipped_urls: list[str]
+    skipped_urls: list[SkipRecord]
     failed_urls: list[str]
     raw_dir: Path
 
     @property
+    def candidate_urls(self) -> list[str]:
+        """URLs that passed eligibility and relevance filtering."""
+        return [candidate.url for candidate in self.candidates]
+
+    @property
+    def crawled_urls(self) -> list[str]:
+        """URLs that were actually fetched and kept."""
+        return [page.requested_url for page in self.pages]
+
+    @property
     def discovered(self) -> int:
+        return len(self.discovered_urls)
+
+    @property
+    def candidate_count(self) -> int:
         return len(self.candidates)
+
+    @property
+    def selected(self) -> int:
+        return len(self.selected_urls)
 
     @property
     def fetched(self) -> int:
@@ -52,6 +73,13 @@ class CrawlReport:
     @property
     def failed(self) -> int:
         return len(self.failed_urls)
+
+    def skip_reasons(self) -> dict[str, int]:
+        """Count skipped URLs by reason (diagnostics)."""
+        counts: Counter[str] = Counter()
+        for record in self.skipped_urls:
+            counts[record.reason] += 1
+        return dict(sorted(counts.items()))
 
     def category_counts(self) -> dict[str, int]:
         counts: Counter[str] = Counter()
@@ -89,10 +117,12 @@ def format_summary(report: CrawlReport) -> str:
         f"Sitemaps loaded ({len(report.sitemap_urls)}):",
         *[f"  {url}" for url in report.sitemap_urls],
         "",
-        f"Pages discovered: {report.discovered}",
-        f"Pages fetched:    {report.fetched}",
-        f"Pages skipped:    {report.skipped}",
-        f"Pages failed:     {report.failed}",
+        f"URLs discovered:    {report.discovered}",
+        f"Candidates eligible: {report.candidate_count}",
+        f"URLs selected:      {report.selected}",
+        f"Pages fetched:      {report.fetched}",
+        f"Pages skipped:      {report.skipped}",
+        f"Pages failed:       {report.failed}",
         "",
         "Categories:",
     ]
@@ -114,11 +144,18 @@ def format_summary(report: CrawlReport) -> str:
             "",
             "Raw pages:",
             f"  {report.raw_dir}",
-            "",
-            "Skipped reasons:",
-            *[f"  {url}" for url in report.skipped_urls[:_MAX_EXAMPLES_PER_CATEGORY]],
         ]
     )
+    reasons = report.skip_reasons()
+    lines.extend(["", "Skipped reasons:"])
+    if reasons:
+        for reason, count in list(reasons.items())[:_MAX_EXAMPLES_PER_CATEGORY]:
+            lines.append(f"  {reason}: {count}")
+        lines.append("")
+        for record in report.skipped_urls[:_MAX_EXAMPLES_PER_CATEGORY]:
+            lines.append(f"  {record.url}")
+    else:
+        lines.append("  (none)")
     if report.failed_urls:
         lines.extend(
             [

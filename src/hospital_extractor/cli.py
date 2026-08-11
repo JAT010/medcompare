@@ -23,7 +23,7 @@ from hospital_extractor.export import (
     export_master_csv,
     export_master_excel,
 )
-from hospital_extractor.extraction import CrawlStats, build_dataset
+from hospital_extractor.extraction import CrawlStats, analyze_pages, build_dataset
 from hospital_extractor.extraction.intake import project_intake
 from hospital_extractor.schema.discovery import format_dataset_summary
 from hospital_extractor.storage import write_dataset
@@ -63,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also crawl low-value categories (blog, career, news, booking)",
     )
     parser.add_argument(
+        "--min-relevance",
+        type=float,
+        default=CrawlLimits().enqueue_min_score,
+        help="Minimum relevance score for pages discovered during the crawl",
+    )
+    parser.add_argument(
         "--export",
         action="store_true",
         help="Run extraction and export the master intake JSON/CSV/XLSX after the crawl",
@@ -80,6 +86,7 @@ async def _run(argv: list[str] | None = None) -> int:
         timeout=args.timeout,
         max_retries=args.max_retries,
         delay=args.delay,
+        enqueue_min_score=args.min_relevance,
     )
     try:
         context = build_context(args.url, limits=limits, user_agent=args.user_agent)
@@ -126,7 +133,8 @@ def _extract_and_export(report: CrawlReport, target_url: str, output_dir: str) -
     basename = dataset_basename(dataset)
     json_path = write_dataset(dataset, export_root / f"{basename}.json")
 
-    intake = project_intake(dataset)
+    analyzed = analyze_pages(pages)
+    intake = project_intake(dataset, pages=analyzed)
     master_dir = export_root / f"{basename}_master"
     master_csv_path, master_quality_path = export_master_csv(
         intake,

@@ -36,6 +36,7 @@ DEFAULT_FALLBACK_USER_AGENTS = (
 
 DEFAULT_MAX_DEPTH = 2
 DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024
+DEFAULT_ENQUEUE_MIN_SCORE = 2.0
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ class CrawlLimits:
     max_retries: int = DEFAULT_RETRIES
     delay: float = DEFAULT_DELAY_SECONDS
     max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
+    enqueue_min_score: float = DEFAULT_ENQUEUE_MIN_SCORE
 
 
 @dataclass(frozen=True)

@@ -9,13 +9,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-__all__ = ["CandidatePage", "CandidateSource", "dedupe_candidates"]
+__all__ = [
+    "CandidatePage",
+    "CandidateSource",
+    "SkipRecord",
+    "dedupe_candidates",
+]
 
 SOURCE_SITEMAP = "sitemap"
 SOURCE_INTERNAL_LINK = "internal_link"
 SOURCE_SEED = "seed"
 
 CandidateSource = str
+
+
+@dataclass(frozen=True)
+class SkipRecord:
+    """One URL that was skipped during discovery/selection/crawl, with reason."""
+
+    url: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -28,6 +41,7 @@ class CandidatePage:
     parent_url: str | None = None
     depth: int = 0
     preliminary_category: str | None = None
+    selection_score: float | None = None
 
 
 def dedupe_candidates(candidates: list[CandidatePage]) -> list[CandidatePage]:
