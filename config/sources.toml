@@ -1,0 +1,52 @@
+# Source registry configuration for the Hospital Intelligence Platform.
+#
+# Every entry names a registered adapter by `source_type`:
+#   website     — the existing crawler + extraction pipeline (default)
+#   mock_api    — the LOCAL DEMO API (simulated/fictional data, never real)
+#   hospital_api— an authorized hospital JSON API (P21: fail closed unless
+#                 authorized=true + allowlisted host [+ credential_env])
+#   json_feed   — a local canonical dataset file, or an authorized remote feed
+#
+# P21 authorization fields (no secrets in this file — env var *names* only):
+#   authorized          — must be true for hospital_api / remote feeds before
+#                         any external request is allowed (fail closed)
+#   allowed_hosts       — SSRF host allowlist (wildcards like *.example.in ok)
+#   allowed_schemes     — optional scheme restriction (default https, http)
+#   allow_private_hosts — permit localhost/private IPs (local mocks only)
+#   credential_env      — environment variable NAME holding the secret at
+#                         request time (e.g. MEDCOMPARE_CONNECTOR_X_TOKEN)
+#   credential_required — true to deny when the credential env is unset
+#   timeout_seconds     — bounded request timeout
+#   max_response_bytes  — bounded response size (oversized → permanent error)
+#
+# The example entries below are DISABLED (commented out) so that existing
+# behaviour is untouched until you choose to enable them.  Active sources are
+# selected per request via  --source  (CLI) or the request `source` field.
+#
+# Real hospital API/feed integrations require an authorized source
+# configuration and credentials and are not included by default.
+
+# [[sources]]
+# name = "demo-northstar"
+# source_type = "mock_api"
+# hospital_ref = "demo-northstar"
+# base_url = "http://127.0.0.1:8001"
+# provider = "Northstar Demo Data Services"
+
+# [[sources]]
+# name = "northstar-feed"
+# source_type = "json_feed"
+# hospital_ref = "data/export/Northstar Multispeciality Hospital.json"
+
+# [[sources]]
+# name = "northstar-authoritative"
+# source_type = "hospital_api"
+# hospital_ref = "northstar"
+# base_url = "https://api.example-hospital.in"
+# provider = "Northstar Hospital (authorized integration)"
+# authorized = true
+# allowed_hosts = ["api.example-hospital.in"]
+# credential_env = "MEDCOMPARE_CONNECTOR_NORTHSTAR_TOKEN"
+# credential_required = true
+# timeout_seconds = 15
+# max_response_bytes = 5000000

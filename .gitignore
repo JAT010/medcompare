@@ -1,0 +1,43 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python caches and tooling caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime data and logs (never commit scraping artifacts)
+data/
+logs/
+*.xlsx
+*.csv
+demo-evidence/
+
+# Session/demo artifacts (screenshots, probes, dev-server logs)
+*.tsbuildinfo
+*.token
+demo-evidence/*.token
+
+# Build artifacts
+dist/
+build/
+
+# Secrets and local config
+.env
+.env.*
+*.pem
+*.key
+
+# Editor / OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+

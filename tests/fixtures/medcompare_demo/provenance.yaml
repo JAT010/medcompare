@@ -1,0 +1,69 @@
+# MedCompare YAML demo — provenance records (synthetic fixture).
+# Each record says where one field value came from. not_found marks an
+# UNKNOWN observation (the field was sought and not published).
+meta:
+  label: medcompare-yaml-demo-provenance
+
+records:
+  - hospital_id: demo_a
+    field: beds
+    source_url: https://demo-a.example.test/
+    extraction_method: json_ld
+    confidence: 0.95
+    captured_at: "2026-09-24T12:00:00+00:00"
+
+  - hospital_id: demo_a
+    field: cath_lab
+    source_url: https://demo-a.example.test/treatments
+    extraction_method: card
+    confidence: 0.83
+    captured_at: "2026-09-24T12:00:00+00:00"
+
+  - hospital_id: demo_b
+    field: phone
+    source_url: https://demo-b.example.test/contact
+    extraction_method: semantic_html
+    confidence: 0.90
+    captured_at: "2026-09-24T12:00:00+00:00"
+
+  - hospital_id: demo_b
+    field: nabh
+    source_url: https://demo-b.example.test/
+    extraction_method: not_found
+    confidence: 0.0
+    captured_at: "2026-09-24T12:00:00+00:00"
+
+  - hospital_id: demo_c
+    field: beds
+    source_url: https://demo-c.example.test/
+    extraction_method: not_found
+    confidence: 0.0
+    captured_at: "2026-09-24T12:00:00+00:00"
+
+  - hospital_id: demo_c
+    field: cardiology
+    source_url: https://demo-c.example.test/treatments
+    extraction_method: not_found
+    confidence: 0.0
+    captured_at: "2026-09-24T12:00:00+00:00"
+
+  - hospital_id: demo_c
+    field: cath_lab
+    source_url: https://demo-c.example.test/treatments
+    extraction_method: not_found
+    confidence: 0.0
+    captured_at: "2026-09-24T12:00:00+00:00"
+
+  - hospital_id: demo_d
+    field: orthopaedics
+    source_url: https://demo-d.example.test/
+    extraction_method: not_found
+    confidence: 0.0
+    captured_at: "2026-09-24T12:00:00+00:00"
+
+  - hospital_id: demo_d
+    field: nabh
+    source_url: https://demo-d.example.test/
+    extraction_method: heading
+    confidence: 0.70
+    captured_at: "2026-09-24T12:00:00+00:00"

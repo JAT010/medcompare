@@ -1,0 +1,85 @@
+# MedCompare YAML demo — CURRENT snapshot (synthetic fixture).
+# demo_a modified (beds, cath_lab, specialities, facilities).
+# demo_b and demo_c unchanged from baseline.
+# demo_d added.
+meta:
+  label: medcompare-yaml-demo-current
+  snapshot: current
+  disclaimer: >-
+    Synthetic DEMO fixture for validation. Real hospital API/feed integrations
+    require an authorized source configuration and credentials and are not
+    included by default. Search queries are not persistently stored.
+
+hospitals:
+  demo_a:
+    hospital_id: demo_a
+    hospital_name: Aster Valley Hospital (DEMO)
+    city: Delhi
+    source_url: https://demo-a.example.test/
+    beds: 550
+    emergency: "YES"
+    cardiology: "YES"
+    orthopaedics: "YES"
+    cath_lab: "YES"
+    nabh: "YES"
+    jci: "NO"
+    specialities:
+      - Cardiology
+      - Orthopaedics
+      - Oncology
+    facilities:
+      - Emergency
+      - ICU
+      - MRI
+
+  demo_b:
+    hospital_id: demo_b
+    hospital_name: Banyan Crest Institute (DEMO)
+    city: Noida
+    source_url: https://demo-b.example.test/
+    beds: 300
+    emergency: "YES"
+    cardiology: "YES"
+    orthopaedics: "NO"
+    cath_lab: "YES"
+    nabh: "UNKNOWN"
+    phone: "+91-120-40000002"
+    specialities:
+      - Cardiology
+    facilities:
+      - Emergency
+      - Cath Lab
+
+  demo_c:
+    hospital_id: demo_c
+    hospital_name: Cypress Gardens Hospital (DEMO)
+    city: Ghaziabad
+    source_url: https://demo-c.example.test/
+    beds: "UNKNOWN"
+    emergency: "NO"
+    cardiology: "UNKNOWN"
+    orthopaedics: "YES"
+    cath_lab: "UNKNOWN"
+    nabh: "YES"
+    specialities:
+      - Orthopaedics
+    facilities:
+      - Emergency
+
+  demo_d:
+    hospital_id: demo_d
+    hospital_name: Riverbuck Medical Centre (DEMO)
+    city: Surat
+    source_url: https://demo-d.example.test/
+    beds: 250
+    emergency: "YES"
+    cardiology: "NO"
+    orthopaedics: "UNKNOWN"
+    cath_lab: "NO"
+    nabh: "UNKNOWN"
+    jci: "NO"
+    specialities:
+      - General Surgery
+    facilities:
+      - Emergency
+      - Pharmacy

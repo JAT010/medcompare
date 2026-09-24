@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search &amp; Compare — Hospital Intelligence Platform</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Search &amp; Compare</h1>
+        <p class="subtitle">Structured search and side-by-side field comparison of stored hospitals</p>
+    </header>
+
+    <main>
+        <p>
+            <a class="btn-link" href="/">← Procedure comparison</a> ·
+            <a class="btn-link" href="/hospitals">All hospitals</a> ·
+            <a class="btn-link" href="/quality">Quality</a>
+        </p>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <section class="card">
+            <h2>Search stored datasets</h2>
+            <form method="post" action="/search">
+                <input type="hidden" name="mode" value="search">
+                <div class="form-group">
+                    <label for="text">Free text</label>
+                    <input type="text" id="text" name="text"
+                           placeholder="Hospital name, speciality, city…"
+                           value="">
+                </div>
+                <div class="form-group">
+                    <label for="filter_field">Field filter</label>
+                    <div class="filter-row">
+                        <select id="filter_field" name="filter_field">
+                            <option value="">(optional)</option>
+                            <option value="hospital.name">Hospital name</option>
+                            <option value="hospital.bed_count">Bed count</option>
+                            <option value="hospital.hospital_type">Hospital type</option>
+                            <option value="contacts.city">City</option>
+                            <option value="contacts.state">State</option>
+                            <option value="infrastructure.total_beds">Total beds</option>
+                            <option value="specialities.name">Speciality name</option>
+                            <option value="procedures.name">Procedure name</option>
+                            <option value="doctors.name">Doctor name</option>
+                            <option value="source.source_type">Source type</option>
+                            <option value="quality.records_extracted">Records extracted</option>
+                        </select>
+                        <select name="filter_operator">
+                            <option value="equals">equals</option>
+                            <option value="not_equals">not_equals</option>
+                            <option value="contains">contains</option>
+                            <option value="not_contains">not_contains</option>
+                            <option value="exists">exists</option>
+                            <option value="not_exists">not_exists</option>
+                            <option value="in">in</option>
+                            <option value="not_in">not_in</option>
+                            <option value="gt">gt</option>
+                            <option value="gte">gte</option>
+                            <option value="lt">lt</option>
+                            <option value="lte">lte</option>
+                            <option value="after">after</option>
+                            <option value="before">before</option>
+                        </select>
+                        <input type="text" name="filter_value" placeholder="value">
+                    </div>
+                    <p class="hint">Missing fields stay UNKNOWN — they are never treated as NO.</p>
+                </div>
+                <div class="form-group">
+                    <label for="limit">Limit</label>
+                    <input type="number" id="limit" name="limit" value="50" min="1" max="500">
+                </div>
+                <button type="submit" class="btn-primary">Search</button>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2>Compare stored hospitals (2–4)</h2>
+            <form method="post" action="/search">
+                <input type="hidden" name="mode" value="compare">
+                <div class="form-group">
+                    <label for="hospital_ids">Hospitals</label>
+                    <select id="hospital_ids" name="hospital_ids" multiple size="6">
+                        {% for ds in datasets %}
+                        <option value="{{ ds.hospital_id or ds.dataset_id }}">
+                            {{ ds.hospital_name or ds.hospital_ref }}
+                            ({{ ds.source_type }}{% if ds.provider %} · {{ ds.provider }}{% endif %})
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <p class="hint">Hold Ctrl/Cmd to select 2–4. Side-by-side only — no ranking or winner.</p>
+                </div>
+                <div class="form-group">
+                    <label for="fields">Fields <span class="hint">(comma-separated, optional — defaults apply)</span></label>
+                    <input type="text" id="fields" name="fields"
+                           placeholder="hospital.name,hospital.bed_count,contacts.city">
+                </div>
+                <button type="submit" class="btn-primary">Compare fields</button>
+            </form>
+        </section>
+
+        {% if result is not none %}
+        <section class="card">
+            <h2>Search results</h2>
+            <p class="muted">{{ result.total }} match(es) · queried {{ result.queried_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</p>
+            {% if result.matches %}
+            <table class="result-table">
+                <thead>
+                    <tr>
+                        <th>Hospital</th>
+                        <th>Source</th>
+                        <th>Captured</th>
+                        <th>Records</th>
+                        <th>Matched fields</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for match in result.matches %}
+                    <tr>
+                        <td>
+                            {% if match.hospital_id %}
+                            <a href="/hospitals/{{ match.dataset_id }}">{{ match.hospital_name or match.hospital_ref }}</a>
+                            {% else %}
+                            {{ match.hospital_name or match.hospital_ref }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="source-badge source-{{ match.source_type }}">{{ match.source_type }}</span>
+                            {% if match.provider %}<span class="provider">{{ match.provider }}</span>{% endif %}
+                        </td>
+                        <td>{{ match.captured_at[:19] }}</td>
+                        <td>{{ match.record_count }}</td>
+                        <td>
+                            {% for field in match.fields %}
+                            <div class="field-hit">
+                                <strong>{{ field.field }}:</strong>
+                                {% if field.unknown %}
+                                <span class="decision unknown">UNKNOWN</span>
+                                {% else %}
+                                <span>{{ field.value }}</span>
+                                {% endif %}
+                            </div>
+                            {% else %}
+                            <span class="muted">(matched on free text / all filters)</span>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state"><p>No datasets matched this query.</p></div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {% if compare_result is defined and compare_result is not none %}
+        <section class="card">
+            <h2>Field comparison</h2>
+            <p class="notice">{{ compare_result.note }}</p>
+            <table class="result-table comparison-table">
+                <thead>
+                    <tr>
+                        <th>Field</th>
+                        {% for hospital_id in compare_result.hospital_ids %}
+                        <th>{{ compare_result.hospital_names.get(hospital_id) or hospital_id }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for field in compare_result.fields %}
+                    <tr>
+                        <td><strong>{{ field.label }}</strong><br><code>{{ field.field }}</code></td>
+                        {% for cell in field.cells %}
+                        <td>
+                            {% if cell.unknown %}
+                            <span class="decision unknown">UNKNOWN</span>
+                            {% else %}
+                            <span>{{ cell.value }}</span>
+                            {% endif %}
+                            <div class="muted small">
+                                {{ cell.source_type }}
+                                {% if cell.provider %}· {{ cell.provider }}{% endif %}
+                                {% if cell.captured_at %}· {{ cell.captured_at.strftime('%Y-%m-%d') }}{% endif %}
+                            </div>
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        {% endif %}
+    </main>
+
+    <footer>
+        <p>Built on the Universal Hospital Website Intelligence Extractor</p>
+    </footer>
+</body>
+</html>

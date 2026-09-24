@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Comparison Tool</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Hospital Comparison Tool</h1>
+        <p class="subtitle">Evidence-backed comparison for target procedures</p>
+    </header>
+
+    <main>
+        <p>
+            <a class="btn-link" href="/hospitals">Stored hospitals</a> ·
+            <a class="btn-link" href="/search">Search &amp; field compare</a> ·
+            <a class="btn-link" href="/quality">Quality &amp; observability</a>
+        </p>
+        <div class="demo-banner">
+            <strong>Demo mode</strong> — the <em>Demo API</em> source serves entirely
+            simulated hospital data (fictional facilities labelled <code>demo-*</code>).
+            Start <code>medcompare-demo-server</code> first, then run a demo comparison.
+            No claim on this page reflects a real hospital unless verified.
+            <button type="button" class="btn-demo" onclick="loadDemoComparison()">
+                Load demo comparison
+            </button>
+        </div>
+
+        <form
+            hx-post="/compare"
+            hx-target="#results"
+            hx-swap="innerHTML"
+            hx-indicator="#loading"
+        >
+            <div class="form-group">
+                <label for="procedure">Target Procedure / Department</label>
+                <input
+                    type="text"
+                    id="procedure"
+                    name="procedure"
+                    placeholder="e.g. Knee Replacement, Cardiology, Angioplasty"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="category">Category <span class="hint">(optional)</span></label>
+                <select id="category" name="category">
+                    <option value="">Auto-detect</option>
+                    <option value="procedure">Procedure</option>
+                    <option value="treatment">Treatment</option>
+                    <option value="speciality">Speciality</option>
+                    <option value="department">Department</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="source">Data Source</label>
+                <select id="source" name="source">
+                    <option value="website">Hospital websites (crawled)</option>
+                    <option value="mock_api">Demo API (simulated data)</option>
+                    <option value="json_feed">Imported data files</option>
+                    <option value="hospital_api">Authorized hospital API</option>
+                </select>
+                <p class="hint">For Demo API or imported files, enter hospital IDs or file paths instead of URLs.</p>
+            </div>
+
+            <div class="form-group">
+                <label for="urls">Hospital URLs <span class="hint">(2-4 URLs, one per line)</span></label>
+                <textarea
+                    id="urls"
+                    name="urls"
+                    rows="4"
+                    placeholder="https://www.hospital-a.in&#10;https://www.hospital-b.in&#10;https://www.hospital-c.in"
+                    required
+                ></textarea>
+            </div>
+
+            <button type="submit" class="btn-primary">Compare Hospitals</button>
+        </form>
+
+        <div id="loading" class="htmx-indicator">
+            <div class="spinner"></div>
+            <p>Crawling and extracting data from hospital websites... This may take 1-2 minutes per hospital.</p>
+        </div>
+
+        <div id="results"></div>
+    </main>
+
+    <footer>
+        <p>Built on the Universal Hospital Website Intelligence Extractor · Demo data is simulated and must be verified before use.</p>
+    </footer>
+
+    <script>
+        function loadDemoComparison() {
+            document.getElementById("source").value = "mock_api";
+            document.getElementById("procedure").value = "Total Knee Replacement";
+            document.getElementById("urls").value = "demo-northstar\ndemo-solstice";
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quality &amp; Observability — Hospital Intelligence Platform</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Quality &amp; Observability</h1>
+        <p class="subtitle">Independent metrics from stored rows only — no overall score</p>
+    </header>
+
+    <main>
+        <p>
+            <a class="btn-link" href="/">← Procedure comparison</a> ·
+            <a class="btn-link" href="/hospitals">All hospitals</a> ·
+            <a class="btn-link" href="/search">Search</a> ·
+            <a class="btn-link" href="/api/v1/quality/pipeline">Pipeline JSON</a>
+        </p>
+
+        <section class="card">
+            <h2>Scope</h2>
+            <ul>
+                <li><strong>Scope:</strong> <code>{{ report.scope.value }}</code></li>
+                <li><strong>Generated:</strong> {{ report.generated_at }}</li>
+                <li><strong>Source of metrics:</strong> <code>{{ report.source_of_metrics }}</code></li>
+                <li><strong>Overall score:</strong> not computed (always null)</li>
+            </ul>
+            <p class="notice">{{ report.note }}</p>
+        </section>
+
+        <section class="card">
+            <h2>Pipeline counters</h2>
+            <ul>
+                <li>Hospitals: {{ report.hospital_count }}</li>
+                <li>Datasets: {{ report.dataset_count }}</li>
+                <li>Snapshots: {{ report.snapshot_count }}</li>
+                <li>Change sets: {{ report.change_set_count }}</li>
+                <li>Verification jobs: {{ report.verification_job_count }}</li>
+                <li>Reconciliation cases: {{ report.reconciliation_case_count }}</li>
+                <li>Monitoring policies: {{ report.monitoring_policy_count }}</li>
+                <li>Reports: {{ report.report_count }}</li>
+                <li>Orchestration runs: {{ report.orchestration_run_count }}</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2>All metrics</h2>
+            <table class="result-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Dimension</th>
+                        <th>Value</th>
+                        <th>Unit</th>
+                        <th>Definition</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in report.metrics %}
+                    <tr>
+                        <td><code>{{ m.name }}</code></td>
+                        <td>{{ m.dimension.value }}</td>
+                        <td>{{ m.value }}</td>
+                        <td>{{ m.unit }}</td>
+                        <td class="muted">{{ m.definition }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="card">
+            <h2>Markdown export</h2>
+            <p class="muted">Same metrics, human-readable form.</p>
+            <pre class="markdown-export">{{ markdown }}</pre>
+        </section>
+    </main>
+
+    <footer>
+        <p>Metrics are independent dimensions. No composite or overall quality score is computed or implied.</p>
+    </footer>
+</body>
+</html>

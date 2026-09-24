@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reconciliation {{ case.reconciliation_case_id }} — Hospital Comparison</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Reconciliation case
+            <span class="status-badge status-{{ case.status }}">{{ case.status_label }}</span>
+        </h1>
+        <p class="subtitle">
+            <code>{{ case.reconciliation_case_id }}</code> ·
+            {{ case.hospital_name or case.hospital_id }} ·
+            trigger <code>{{ case.trigger }}</code>
+        </p>
+        {% if case.assigned_to %}
+        <p class="muted">Assigned to: {{ case.assigned_to }}</p>
+        {% endif %}
+    </header>
+
+    <main>
+        <p><a class="btn-link" href="/hospitals/{{ case.hospital_id }}">← Hospital profile</a>
+           ·
+           <a class="btn-link" href="/api/v1/reconciliation-cases/{{ case.reconciliation_case_id }}">JSON</a></p>
+
+        {% if case.resolution_label %}
+        <section class="card">
+            <h2>Resolution</h2>
+            <p><strong>{{ case.resolution_label }}</strong></p>
+            {% if case.resolution_reason %}<p>{{ case.resolution_reason }}</p>{% endif %}
+            {% if case.resolved_at %}<p class="muted">Resolved {{ case.resolved_at }}</p>{% endif %}
+        </section>
+        {% endif %}
+
+        <section class="card">
+            <h2>Field-level disagreements</h2>
+            <p class="muted">
+                These reference the already-captured snapshots; nothing here is
+                written back to any hospital source.
+            </p>
+            {% if case.display_values %}
+            <table class="profile-table">
+                <tr>
+                    <th>Field</th><th>Change</th><th>Verdict</th>
+                    <th>Authoritative</th><th>Website</th>
+                </tr>
+                {% for item in case.display_values %}
+                <tr>
+                    <td><code>{{ item.path }}</code>
+                        {% if item.entity_key and item.entity_key != '...' %}<br>{{ item.entity_key }}{% endif %}
+                        {% if item.field and item.field != item.path %}<br><span class="muted">{{ item.field }}</span>{% endif %}
+                    </td>
+                    <td>{{ item.change_type }}</td>
+                    <td>
+                        <span class="outcome outcome-{{ item.outcome }}">{{ item.outcome }}</span>
+                    </td>
+                    <td>
+                        {% if item.previous_value %}
+                        <span class="muted">previous: {{ item.previous_value }}</span><br>
+                        {% endif %}
+                        {{ item.authoritative_value }}
+                    </td>
+                    <td>{{ item.verification_value }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% else %}
+            <p class="muted">No itemised disagreements recorded.</p>
+            {% endif %}
+        </section>
+
+        <section class="card">
+            <h2>Evidence</h2>
+            <ul class="evidence-list">
+                <li>
+                    Change set <code>{{ case.change_set_id }}</code>
+                    {% if case.evidence and case.evidence.change_set %}
+                        · status {{ case.evidence.change_set.status or 'n/a' }}
+                        · detected {{ case.evidence.change_set.detected_at or 'n/a' }}
+                    {% endif %}
+                </li>
+                <li>
+                    Verification job <code>{{ case.verification_job_id }}</code>
+                    {% if case.evidence and case.evidence.job %}
+                        · target <code>{{ case.evidence.job.target_source_type }}</code>
+                        · {{ case.evidence.job.status or 'n/a' }}
+                    {% endif %}
+                </li>
+                <li>
+                    Verification result <code>{{ case.verification_result_id }}</code>
+                    {% if case.evidence and case.evidence.result %}
+                        · status {{ case.evidence.result.status or 'n/a' }}
+                        · checked {{ case.evidence.result.checked_at or 'n/a' }}
+                    {% endif %}
+                </li>
+                {% if case.evidence and case.evidence.triggering_snapshot %}
+                <li>
+                    Triggering snapshot
+                    <code>{{ case.evidence.triggering_snapshot.snapshot_id }}</code>
+                    <span class="muted">· {{ case.evidence.triggering_snapshot.source_type }} ·
+                    {{ case.evidence.triggering_snapshot.captured_at }}</span>
+                </li>
+                {% endif %}
+                {% if case.evidence and case.evidence.verification_snapshot %}
+                <li>
+                    Verification snapshot
+                    <code>{{ case.evidence.verification_snapshot.snapshot_id }}</code>
+                    <span class="muted">· {{ case.evidence.verification_snapshot.source_type }} ·
+                    {{ case.evidence.verification_snapshot.captured_at }}</span>
+                </li>
+                {% endif %}
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2>Take action</h2>
+            {% if case.allowed_actions %}
+            <form method="post" action="/reconciliation-cases/{{ case.reconciliation_case_id }}/actions" class="action-form">
+                <input type="hidden" name="action" id="action-field" value="{{ case.allowed_actions[0] }}">
+                <label for="resolution">Resolution (for resolve)</label>
+                <select name="resolution" id="resolution">
+                    <option value="">— none —</option>
+                    <option value="authoritative_source_confirmed">Authoritative source confirmed</option>
+                    <option value="website_confirmed">Website confirmed</option>
+                    <option value="source_disagreement">Source disagreement</option>
+                    <option value="insufficient_evidence">Insufficient evidence</option>
+                    <option value="false_positive">False positive</option>
+                </select>
+                <label for="assigned_to">Assign to (for review)</label>
+                <input type="text" name="assigned_to" id="assigned_to" value="{{ case.assigned_to or '' }}">
+                <label for="reason">Reason *</label>
+                <textarea name="reason" id="reason" rows="2" placeholder="Why this action?"></textarea>
+                <div class="action-buttons">
+                    {% for action in case.allowed_actions %}
+                    <button type="submit" name="action" value="{{ action }}">{{ action | replace('_', ' ') | title }}</button>
+                    {% endfor %}
+                </div>
+            </form>
+            <p class="muted">Actions follow the reconciliation state machine; every action is audited.</p>
+            {% else %}
+            <p class="muted">This case is closed and cannot be acted on (reopen it first).</p>
+            {% endif %}
+        </section>
+
+        {% if case.events %}
+        <section class="card">
+            <h2>Audit trail</h2>
+            <table class="profile-table">
+                <tr><th>When</th><th>Action</th><th>Actor</th><th>From</th><th>To</th><th>Reason</th></tr>
+                {% for event in case.events %}
+                <tr>
+                    <td class="muted">{{ event.created_at }}</td>
+                    <td>{{ event.action }}</td>
+                    <td><code>{{ event.actor }}</code></td>
+                    <td>{{ event.from_status or '—' }}</td>
+                    <td>{{ event.to_status or '—' }}</td>
+                    <td>{{ event.reason }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </section>
+        {% endif %}
+
+        <section class="card">
+            <h2>Report & External Action</h2>
+            {% if case.report %}
+            <div class="report-status">
+                <h3>Report: {{ case.report.report_id }}</h3>
+                <p><strong>Status:</strong> <span class="status-badge status-{{ case.report.status }}">{{ case.report.status|upper }}</span></p>
+                <p><strong>Type:</strong> {{ case.report.report_type }} · <strong>Format:</strong> {{ case.report.format }}</p>
+                <p class="muted">Generated {{ case.report.generated_at }} by {{ case.report.generated_by }}</p>
+                <p>
+                    <a class="btn-link" href="/api/v1/reports/{{ case.report.report_id }}">JSON</a>
+                    ·
+                    <a class="btn-link" href="/api/v1/reports/{{ case.report.report_id }}/format?format=html">HTML</a>
+                    ·
+                    <a class="btn-link" href="/api/v1/reports/{{ case.report.report_id }}/format?format=markdown">Markdown</a>
+                </p>
+            </div>
+            {% else %}
+            <p class="muted">No report generated yet.</p>
+            <p><a class="btn-link" href="/api/v1/reconciliation-cases/{{ case.reconciliation_case_id }}/report">Generate Report</a></p>
+            {% endif %}
+
+            {% if case.submissions %}
+            <div class="submission-status">
+                <h3>External Submissions</h3>
+                <ul class="evidence-list">
+                {% for sub in case.submissions %}
+                    <li>
+                        <code>{{ sub.submission_id }}</code>
+                        <span class="status-badge status-{{ sub.status }}">{{ sub.status|upper }}</span>
+                        · Provider: <code>{{ sub.provider_type }}</code>
+                        {% if sub.external_reference %}· Ref: {{ sub.external_reference }}{% endif %}
+                        {% if sub.dry_run %}<span class="notice"> (DRY RUN)</span>{% endif %}
+                        {% if sub.error %}<br><span class="warning-badge">Error: {{ sub.error }}</span>{% endif %}
+                    </li>
+                {% endfor %}
+                </ul>
+            </div>
+            {% else %}
+            <p class="muted">No external submissions recorded.</p>
+            <p><a class="btn-link" href="/api/v1/reports/{{ case.report.report_id if case.report else '—' }}/submit">Submit Report</a></p>
+{% endif %}
+        </section>
+
+        <section class="card">
+            <h2>Safety guarantees</h2>
+            <ul>
+                <li>No hospital data is written back to any source.</li>
+                <li>Snapshots stay immutable; this case only references them.</li>
+                <li>Reopening never creates a duplicate case.</li>
+                <li>External notifications/submissions require explicit authorization.</li>
+            </ul>
+        </section>
+    </main>
+
+    <footer>
+        <p>Any simulated data here must be independently verified before clinical use.</p>
+    </footer>
+</body>
+</html>

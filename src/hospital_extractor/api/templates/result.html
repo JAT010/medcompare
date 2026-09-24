@@ -1,0 +1,127 @@
+<div class="comparison-container">
+    <div class="comparison-header">
+        <h2>Target: {{ result.target.name }}</h2>
+        <p class="target-meta">
+            Category: {{ result.target.category }}
+            {% if result.target.keywords %}
+            Keywords: <code>{{ result.target.keywords[:3] | join(', ') }}</code>
+            {% endif %}
+        </p>
+        <p class="compared-at">Compared at: {{ result.compared_at.strftime('%Y-%m-%d %H:%M') }}</p>
+    </div>
+
+    <div class="comparison-table-wrapper">
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th class="dimension-col">Dimension</th>
+                    {% for hospital in result.hospitals %}
+                    <th class="hospital-col">
+                        <span class="hospital-name">{{ hospital.hospital_name or hospital.hospital_id }}</span>
+                        {% if hospital.source_types | length > 1 %}
+                            {% for st in hospital.source_types %}
+                            <span class="source-badge source-{{ st }}">{{ st }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span class="source-badge source-{{ hospital.source_type }}">{{ hospital.source_type }}</span>
+                        {% endif %}
+                        {% if hospital.provider and hospital.source_types | length == 1 %}
+                        <span class="provider">{{ hospital.provider }}</span>
+                        {% endif %}
+                        {% if hospital.quality_warnings %}
+                        <span class="warning-badge" title="{{ hospital.quality_warnings | join('; ') }}">
+                            ⚠ {{ hospital.quality_warnings | length }}
+                        </span>
+                        {% endif %}
+                    </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for dim in result.hospitals[0].dimensions %}
+                <tr>
+                    <td class="dimension-label">
+                        {{ dim.label }}
+                    </td>
+                    {% for hospital in result.hospitals %}
+                    {% set hdim = hospital.dimensions | selectattr("dimension_key", "equalto", dim.dimension_key) | first %}
+                    {% if hdim %}
+                    <td class="{% if hdim.conflicts %}decision-conflict{% else %}decision-{{ hdim.decision }}{% endif %}">
+                        {% if hdim.conflicts %}<span class="decision-badge conflict-badge">CONFLICT</span>{% else %}<span class="decision-badge">{{ hdim.decision.upper() }}</span>{% endif %}
+                        {% if hdim.value is not none %}
+                            <span class="dim-value">
+                                {% if hdim.value is sequence and hdim.value is not string %}
+                                    {{ hdim.value | length }} item{{ 's' if hdim.value | length != 1 else '' }}
+                                {% elif hdim.value is number %}
+                                    {{ hdim.value }}
+                                {% else %}
+                                    {{ hdim.value }}
+                                {% endif %}
+                            </span>
+                        {% endif %}
+                        {% if hdim.conflicts %}
+                        <div class="conflict-panel">
+                            <span class="conflict-title">⚠ Conflicting evidence — no winner picked</span>
+                            <span class="conflict-desc">{{ hdim.conflicts[0].description }}</span>
+                            <ul class="conflict-facts">
+                                {% for fact in hdim.conflicts[0].facts %}
+                                <li>
+                                    <span class="decision-badge">{{ fact.decision.upper() }}</span>
+                                    <span class="source-badge source-{{ fact.source_type }}">{{ fact.source_type }}</span>
+                                    {{ fact.text }} <span class="source-label">{{ fact.source_url or 'N/A' }}</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        {% if hdim.evidence %}
+                        <details class="evidence-details">
+                            <summary>Evidence ({{ hdim.evidence | length }})</summary>
+                            <ul class="evidence-list">
+                                {% for ev in hdim.evidence %}
+                                <li>
+                                    <span class="source-label">{{ ev.source_url or 'N/A' }}</span>
+                                    <span class="source-badge source-{{ ev.source_type }}">{{ ev.source_type }}</span>
+                                    {% if ev.source_strength %}
+                                    <span class="strength-badge strength-{{ ev.source_strength }}">{{ ev.source_strength }}</span>
+                                    {% endif %}
+                                    {% if ev.confidence is not none %}
+                                    <span class="confidence">{{ "%.0f" | format(ev.confidence * 100) }}%</span>
+                                    {% endif %}
+                                    {% if ev.method %}
+                                    <span class="method">{{ ev.method }}</span>
+                                    {% endif %}
+                                    {% if ev.text %}
+                                    <div class="evidence-text">{{ ev.text }}</div>
+                                    {% endif %}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </details>
+                        {% endif %}
+                    </td>
+                    {% else %}
+                    <td class="decision-unknown">
+                        <span class="decision-badge">UNKNOWN</span>
+                    </td>
+                    {% endif %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="coverage-summary">
+        {% for hospital in result.hospitals %}
+        <div class="coverage-card">
+            <span class="hospital-name">{{ hospital.hospital_name or hospital.hospital_id }}</span>
+            <div class="coverage-bar">
+                <div class="coverage-fill" style="width: {{ (hospital.evidence_coverage * 100) | int }}%"></div>
+            </div>
+            <span class="coverage-pct">{{ "%.0f" | format(hospital.evidence_coverage * 100) }}%</span>
+            <span class="coverage-label">evidence coverage</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>

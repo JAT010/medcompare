@@ -1,0 +1,64 @@
+# MedCompare YAML demo — BASELINE snapshot (synthetic fixture).
+# Fictional hospitals only. Not real patient or hospital data.
+# Tri-state values are quoted strings: "YES" | "NO" | "UNKNOWN".
+meta:
+  label: medcompare-yaml-demo-baseline
+  snapshot: baseline
+  disclaimer: >-
+    Synthetic DEMO fixture for validation. Real hospital API/feed integrations
+    require an authorized source configuration and credentials and are not
+    included by default. Search queries are not persistently stored.
+
+hospitals:
+  demo_a:
+    hospital_id: demo_a
+    hospital_name: Aster Valley Hospital (DEMO)
+    city: Delhi
+    source_url: https://demo-a.example.test/
+    beds: 500
+    emergency: "YES"
+    cardiology: "YES"
+    orthopaedics: "YES"
+    cath_lab: "UNKNOWN"
+    nabh: "YES"
+    jci: "NO"
+    specialities:
+      - Cardiology
+      - Orthopaedics
+    facilities:
+      - Emergency
+      - ICU
+
+  demo_b:
+    hospital_id: demo_b
+    hospital_name: Banyan Crest Institute (DEMO)
+    city: Noida
+    source_url: https://demo-b.example.test/
+    beds: 300
+    emergency: "YES"
+    cardiology: "YES"
+    orthopaedics: "NO"
+    cath_lab: "YES"
+    nabh: "UNKNOWN"
+    phone: "+91-120-40000002"
+    specialities:
+      - Cardiology
+    facilities:
+      - Emergency
+      - Cath Lab
+
+  demo_c:
+    hospital_id: demo_c
+    hospital_name: Cypress Gardens Hospital (DEMO)
+    city: Ghaziabad
+    source_url: https://demo-c.example.test/
+    beds: "UNKNOWN"
+    emergency: "NO"
+    cardiology: "UNKNOWN"
+    orthopaedics: "YES"
+    cath_lab: "UNKNOWN"
+    nabh: "YES"
+    specialities:
+      - Orthopaedics
+    facilities:
+      - Emergency

@@ -1,0 +1,17 @@
+# MedCompare YAML demo — conflicting values (synthetic fixture).
+# Same hospital + same field from two extraction paths disagree.
+# The demo must surface CONFLICT; it must never silently pick one value.
+meta:
+  label: medcompare-yaml-demo-conflict
+
+conflicts:
+  - hospital_id: demo_b
+    field: phone
+    category: contacts
+    values:
+      - value: "+91-120-40000002"
+        source_url: https://demo-b.example.test/contact
+        extraction_method: json_ld
+      - value: "+91-120-49999999"
+        source_url: https://demo-b.example.test/contact
+        extraction_method: semantic_html

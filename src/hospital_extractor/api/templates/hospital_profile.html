@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ profile.name }} — Hospital Profile</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>{{ profile.name }}</h1>
+        <p class="subtitle">
+            <span class="source-badge source-{{ profile.source_type }}">{{ profile.source_type_label }}</span>
+            {% if profile.provider %}<span class="provider">{{ profile.provider }}</span>{% endif %}
+            {% if profile.hospital_ref %}<code>{{ profile.hospital_ref }}</code>{% endif %}
+        </p>
+        {% if profile.is_simulated %}
+        <p class="notice">SIMULATED / DEMO data served by a simulated source — not a real hospital integration. Verify with the hospital before any use.</p>
+        {% endif %}
+    </header>
+
+    <main>
+        <p><a class="btn-link" href="/hospitals">← All hospitals</a> ·
+           <a class="btn-link" href="/api/v1/hospitals/{{ dataset_id }}">JSON</a> ·
+           <a class="btn-link" href="/quality">Quality</a></p>
+
+        {% if available_sources %}
+        <section class="card">
+            <h2>Other sources for this hospital</h2>
+            <p class="muted">The same hospital stored from another source stays one identity — each capture keeps its own provenance.</p>
+            <ul class="source-list">
+                {% for s in available_sources %}
+                <li>
+                    <span class="source-badge source-{{ s.source_type }}">{{ s.source_type }}</span>
+                    <a class="btn-link" href="/hospitals/{{ s.dataset_id }}">{{ s.hospital_name or s.hospital_ref }}</a>
+                    <span class="muted">· {{ s.provider or "unknown provider" }} · {{ s.record_count }} records · {{ s.created_at }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        <section class="card">
+            <h2>Overview</h2>
+            <table class="profile-table">
+                <tr><th>Type</th><td>{{ profile.overview.type }}</td></tr>
+                {% if profile.overview.status %}<tr><th>Status</th><td>{{ profile.overview.status }}</td></tr>{% endif %}
+                {% if profile.overview.established_year %}<tr><th>Established</th><td>{{ profile.overview.established_year }}</td></tr>{% endif %}
+                {% if profile.overview.parent_organization %}<tr><th>Parent</th><td>{{ profile.overview.parent_organization }}</td></tr>{% endif %}
+                {% if profile.overview.bed_count %}<tr><th>Beds</th><td>{{ profile.overview.bed_count }}</td></tr>{% endif %}
+                {% if profile.overview.doctor_count is not none %}<tr><th>Doctors</th><td>{{ profile.overview.doctor_count }}</td></tr>{% endif %}
+                {% if profile.overview.staff_count is not none %}<tr><th>Staff</th><td>{{ profile.overview.staff_count }}</td></tr>{% endif %}
+                {% if profile.overview.website %}<tr><th>Website</th><td><a href="{{ profile.overview.website }}">{{ profile.overview.website }}</a></td></tr>{% endif %}
+                {% if profile.retrieved_at %}<tr><th>Retrieved</th><td>{{ profile.retrieved_at }}</td></tr>{% endif %}
+                {% if profile.last_updated %}<tr><th>Data as of</th><td>{{ profile.last_updated }}</td></tr>{% endif %}
+                {% if profile.hospital_id %}<tr><th>Hospital id</th><td><code>{{ profile.hospital_id }}</code></td></tr>{% endif %}
+            </table>
+            {% if profile.overview.description %}
+            <p class="description">{{ profile.overview.description }}</p>
+            {% endif %}
+        </section>
+
+        {% if profile.history %}
+        <section class="card">
+            <h2>Data history
+                <span class="count">{{ profile.history.snapshot_count }} snapshot{{ 's' if profile.history.snapshot_count != 1 else '' }},
+                {{ profile.history.change_set_count }} change set{{ 's' if profile.history.change_set_count != 1 else '' }}</span>
+            </h2>
+            {% if profile.history.latest_snapshots %}
+            <h3>Latest snapshot per source</h3>
+            <ul class="source-list">
+                {% for snap in profile.history.latest_snapshots %}
+                <li>
+                    <span class="source-badge source-{{ snap.source_type }}">{{ snap.source_type }}</span>
+                    <a class="btn-link" href="/api/v1/snapshots/{{ snap.snapshot_id }}">{{ snap.snapshot_id }}</a>
+                    <span class="muted">· captured {{ snap.captured_at }} · {{ snap.status }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% if profile.history.recent_changes %}
+            <h3>Recent change sets</h3>
+            <ul class="evidence-list">
+                {% for cs in profile.history.recent_changes %}
+                <li>
+                    <a class="btn-link" href="/api/v1/hospitals/{{ profile.hospital_id }}/changes">{{ cs.change_set_id }}</a>
+                    <span class="muted">· {{ cs.status }} ·
+                    +{{ cs.added }} added, -{{ cs.removed }} removed, {{ cs.modified }} modified ·
+                    {{ cs.detected_at }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {% if profile.verification and profile.verification.present %}
+        <section class="card">
+            <details>
+                <summary>
+                    <h2>Verification status <span class="count">{{ profile.verification.jobs | length }} job{{ 's' if profile.verification.jobs | length != 1 else '' }}</span></h2>
+                </summary>
+                <p class="muted">
+                    Verification compares the authoritative source against the
+                    target source (<code>website</code> by default).  Jobs are run by the
+                    explicit background <code>worker</code> — the profile page never crawls.
+                </p>
+                {% for job in profile.verification.jobs %}
+                <h3 class="verification-job-title">
+                    {{ job.verification_job_id }}
+                    <span class="status-badge status-{{ job.result_status or job.status }}">
+                        {{ job.result_status or job.status }}</span>
+                </h3>
+                <ul class="evidence-list">
+                    <li>
+                        Target: <code>{{ job.target_source_type }}</code>
+                        {% if job.target_ref %}<code>{{ job.target_ref }}</code>{% endif %}
+                    </li>
+                    {% if job.scheduled_for %}<li>Due: {{ job.scheduled_for }}</li>{% endif %}
+                    {% if job.completed_at %}<li>Completed: {{ job.completed_at }}</li>{% endif %}
+                    {% if job.checked_at %}<li>Checked: {{ job.checked_at }}</li>{% endif %}
+                    <li>
+                        Outcomes:
+                        <span class="outcome outcome-verified">{{ job.verified }} verified</span> ·
+                        <span class="outcome outcome-mismatch">{{ job.mismatch }} mismatch</span> ·
+                        <span class="outcome outcome-unverified">{{ job.unverified }} unverified</span>
+                    </li>
+                    {% if job.last_error %}<li class="warning-badge">{{ job.last_error }}</li>{% endif %}
+                    {% if job.explanation %}<li class="muted">{{ job.explanation }}</li>{% endif %}
+                </ul>
+                {% if not loop.last %}<hr>{% endif %}
+                {% endfor %}
+                <p class="muted">
+                    Drive the workflow from the CLI: <code>hospital-extractor verify {{
+                    profile.hospital_id }}</code> → <code>hospital-extractor worker</code>.
+                </p>
+            </details>
+        </section>
+        {% endif %}
+
+        {% if profile.reconciliation %}
+        <section class="card">
+            <details open>
+                <summary>
+                    <h2>Reconciliation
+                        <span class="count">{{ profile.reconciliation | length }} case{{ 's' if profile.reconciliation | length != 1 else '' }}</span></h2>
+                </summary>
+                <p class="muted">
+                    Verification mismatches (or opted-in unverified results) open a
+                    reusable reconciliation case.  Actions here are recorded decisions —
+                    no hospital data is written back to any source.
+                </p>
+                <ul class="evidence-list">
+                    {% for rec in profile.reconciliation %}
+                    <li>
+                        <a class="btn-link" href="/reconciliation-cases/{{ rec.reconciliation_case_id }}">
+                            {{ rec.reconciliation_case_id }}</a>
+                        <span class="status-badge status-{{ rec.status }}">{{ rec.status }}</span>
+                        <span class="muted">
+                            trigger {{ rec.trigger }} ·
+                            {{ rec.item_count }} item{{ 's' if rec.item_count != 1 else '' }} ·
+                            {{ rec.events }} event{{ 's' if rec.events != 1 else '' }}
+                            {% if rec.assigned_to %}· assigned to {{ rec.assigned_to }}{% endif %}
+                            · updated {{ rec.updated_at }}
+                        </span>
+                        {% if rec.resolution %}
+                        <br>
+                        <span class="muted">→ {{ rec.resolution }}
+                            {% if rec.resolution_reason %}: {{ rec.resolution_reason }}{% endif %}
+                        </span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </details>
+        </section>
+        {% endif %}
+
+        {% if profile.monitoring %}
+        <section class="card">
+            <details open>
+                <summary>
+                    <h2>Monitoring
+                        <span class="count">{{ profile.monitoring | length }} polic{{ 'ies' if profile.monitoring | length != 1 else 'y' }}</span></h2>
+                </summary>
+                <p class="muted">
+                    Continuous monitoring policies run on a fixed UTC schedule
+                    (hourly / daily / weekly) through the explicit
+                    <code>monitoring worker</code>.  The profile page never crawls.
+                </p>
+                <ul class="evidence-list">
+                    {% for p in profile.monitoring %}
+                    <li>
+                        <code>{{ p.policy_id }}</code>
+                        <span class="status-badge status-{{ p.status }}">{{ p.status }}</span>
+                        <span class="muted">
+                            {{ p.frequency }} · source={{ p.source_type }}
+                            {% if p.target_ref %}· target={{ p.target_ref }}{% endif %}
+                            {% if p.enabled %}· enabled{% else %}· disabled{% endif %}
+                            {% if p.next_run_at %}· next {{ p.next_run_at }}{% endif %}
+                            {% if p.last_success_at %}· last success {{ p.last_success_at }}{% endif %}
+                        </span>
+                        {% if p.consecutive_failures %}
+                        <br>
+                        <span class="warning-badge">{{ p.consecutive_failures }} failure(s)
+                            {% if p.last_error %}: {{ p.last_error }}{% endif %}</span>
+                        {% endif %}
+                        {% if p.last_orchestration_run_id %}
+                        <br>
+                        <span class="muted">run {{ p.last_orchestration_run_id }}</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                <p class="muted">
+                    Drive the workflow from the CLI:
+                    <code>hospital-extractor monitoring add {{ profile.hospital_id }} --frequency daily</code>
+                    → <code>hospital-extractor monitoring worker</code>.
+                </p>
+            </details>
+        </section>
+        {% endif %}
+
+        {% if profile.connector %}
+        <section class="card">
+            <h2>Source connector
+                <span class="count">{{ profile.connector.source_type }}</span></h2>
+            <table class="profile-table">
+                <tr><th>Source type</th><td>{{ profile.connector.source_type }}</td></tr>
+                {% if profile.connector.connector %}
+                <tr><th>Connector</th><td><code>{{ profile.connector.connector }}</code></td></tr>
+                {% endif %}
+                {% if profile.connector.provider %}
+                <tr><th>Provider</th><td>{{ profile.connector.provider }}</td></tr>
+                {% endif %}
+                {% if profile.connector.source_ref %}
+                <tr><th>Source ref</th><td><code>{{ profile.connector.source_ref }}</code></td></tr>
+                {% endif %}
+                <tr><th>Authorization</th>
+                    <td>
+                        {% if profile.connector.authorization_status == 'UNAUTHORIZED' %}
+                        <span class="warning-badge">UNAUTHORIZED</span>
+                        {% elif profile.connector.simulated %}
+                        <span class="status-badge status-pending">SIMULATED / MOCK</span>
+                        {% else %}
+                        <span class="status-badge status-completed">{{ profile.connector.authorization_status }}</span>
+                        {% endif %}
+                    </td></tr>
+                {% if profile.connector.last_acquisition %}
+                <tr><th>Last acquisition</th><td>{{ profile.connector.last_acquisition }}</td></tr>
+                {% endif %}
+                {% if profile.connector.endpoint %}
+                <tr><th>Endpoint</th><td><code>{{ profile.connector.endpoint }}</code></td></tr>
+                {% endif %}
+            </table>
+            {% if profile.connector.simulated %}
+            <p class="notice">SIMULATED / MOCK source — not a real hospital integration.</p>
+            {% endif %}
+            {% if profile.connector.authorization_status == 'UNAUTHORIZED' %}
+            <p class="notice">UNAUTHORIZED — this connector fails closed and makes no external request.</p>
+            {% endif %}
+            {% if profile.connector.notes %}
+            <p class="muted">{{ profile.connector.notes }}</p>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {% if profile.procedures %}
+        <section class="card">
+            <h2>Procedures <span class="count">{{ profile.procedures | length }}</span></h2>
+            <ul class="chip-list">
+                {% for name in profile.procedures[:50] %}
+                <li class="chip">{{ name }}</li>
+                {% endfor %}
+                {% if profile.procedures | length > 50 %}
+                <li class="chip muted">+{{ profile.procedures | length - 50 }} more</li>
+                {% endif %}
+            </ul>
+        </section>
+        {% endif %}
+
+        {% if profile.specialities %}
+        <section class="card">
+            <h2>Specialities <span class="count">{{ profile.specialities | length }}</span></h2>
+            <ul class="chip-list">
+                {% for name in profile.specialities[:30] %}
+                <li class="chip">{{ name }}</li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        {% if profile.infrastructure %}
+        <section class="card">
+            <h2>Infrastructure</h2>
+            <table class="profile-table">
+                {% for field, value in profile.infrastructure.items() %}
+                <tr><th>{{ field.replace('_', ' ') | title }}</th><td>{{ value }}</td></tr>
+                {% endfor %}
+            </table>
+        </section>
+        {% endif %}
+
+        {% if profile.accreditations %}
+        <section class="card">
+            <h2>Accreditations <span class="count">{{ profile.accreditations | length }}</span></h2>
+            <ul class="chip-list">
+                {% for name in profile.accreditations %}
+                <li class="chip accent">{{ name }}</li>
+                {% endfor %}
+            </ul>
+        </section>
+        {% endif %}
+
+        {% if profile.doctors or profile.departments %}
+        <section class="card">
+            <h2>Coverage</h2>
+            <ul>
+                <li>{{ profile.doctors }} doctor records</li>
+                <li>{{ profile.departments }} department records</li>
+            </ul>
+        </section>
+        {% endif %}
+
+        {% if profile.quality %}
+        <section class="card">
+            <h2>Extraction Quality</h2>
+            <ul>
+                <li>Records extracted: {{ profile.quality.records_extracted }}</li>
+                <li>Records rejected: {{ profile.quality.records_rejected }}</li>
+                <li>Pages with information: {{ profile.quality.pages_with_information }} / {{ profile.quality.pages_crawled }} crawled</li>
+                <li>Conflicts detected: {{ profile.quality.conflicts_total }}
+                    {% if profile.quality.conflicts_unresolved %}({{ profile.quality.conflicts_unresolved }} unresolved){% endif %}</li>
+                {% if profile.quality.warnings %}
+                <li class="warning-badge">⚠ {{ profile.quality.warning_count }} warning{{ 's' if profile.quality.warning_count != 1 else '' }}</li>
+                {% endif %}
+                {% if profile.quality.categories_empty %}
+                <li>Empty categories: {{ profile.quality.categories_empty | join(', ') }}</li>
+                {% endif %}
+            </ul>
+            {% if profile.quality.warnings %}
+            <ul class="evidence-list">
+                {% for w in profile.quality.warnings %}
+                <li>{{ w }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        {% if profile.quality_panel %}
+        <section class="card" id="quality-panel">
+            <h2>Quality metrics (P23)</h2>
+            <p class="notice">{{ profile.quality_panel.note }}</p>
+            <p class="muted">Overall score: not computed · Generated {{ profile.quality_panel.generated_at }}</p>
+
+            {% if profile.quality_panel.dataset_metrics %}
+            <h3>Dataset metrics</h3>
+            <table class="result-table">
+                <thead>
+                    <tr><th>Metric</th><th>Value</th><th>Unit</th><th>Definition</th></tr>
+                </thead>
+                <tbody>
+                    {% for name, m in profile.quality_panel.dataset_metrics.items() %}
+                    <tr>
+                        <td><code>{{ name }}</code></td>
+                        <td>{{ m.value }}</td>
+                        <td>{{ m.unit }}</td>
+                        <td class="muted">{{ m.definition }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            {% if profile.quality_panel.hospital_metrics %}
+            <h3>Hospital metrics</h3>
+            <table class="result-table">
+                <thead>
+                    <tr><th>Metric</th><th>Value</th><th>Unit</th><th>Definition</th></tr>
+                </thead>
+                <tbody>
+                    {% for name, m in profile.quality_panel.hospital_metrics.items() %}
+                    <tr>
+                        <td><code>{{ name }}</code></td>
+                        <td>{{ m.value }}</td>
+                        <td>{{ m.unit }}</td>
+                        <td class="muted">{{ m.definition }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            {% if profile.quality_panel.source_reports %}
+            <h3>Sources</h3>
+            <ul>
+                {% for s in profile.quality_panel.source_reports %}
+                <li>
+                    <span class="source-badge source-{{ s.source_type }}">{{ s.source_type }}</span>
+                    {{ s.provider or "—" }} · {{ s.dataset_count }} dataset{{ 's' if s.dataset_count != 1 else '' }}
+                    · {{ s.authorization_status or "—" }}
+                    {% if s.latest_captured_at %}· latest {{ s.latest_captured_at }}{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+
+            <p class="muted">
+                API:
+                <a class="btn-link" href="/api/v1/quality/hospitals/{{ profile.hospital_id }}">hospital JSON</a> ·
+                <a class="btn-link" href="/api/v1/quality/hospitals/{{ profile.hospital_id }}?format=markdown">hospital Markdown</a> ·
+                <a class="btn-link" href="/api/v1/quality/datasets/{{ dataset_id }}">dataset JSON</a>
+            </p>
+        </section>
+        {% endif %}
+    </main>
+
+    <footer>
+        <p>Simulated / interim data must be verified with the hospital before any clinical decision.</p>
+    </footer>
+</body>
+</html>

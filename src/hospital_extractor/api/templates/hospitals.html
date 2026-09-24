@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stored Hospitals — Hospital Intelligence Platform</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Hospital Intelligence Platform</h1>
+        <p class="subtitle">Stored hospital profiles with source provenance</p>
+    </header>
+
+    <main>
+        <p>
+            <a class="btn-link" href="/">← Back to comparison</a> ·
+            <a class="btn-link" href="/search">Search &amp; field compare</a> ·
+            <a class="btn-link" href="/quality">Quality &amp; observability</a>
+        </p>
+
+        {% if datasets %}
+        <div class="hospital-grid">
+            {% for ds in datasets %}
+            <a class="hospital-card" href="/hospitals/{{ ds.dataset_id }}">
+                <span class="hospital-name">{{ ds.hospital_name or ds.hospital_ref }}</span>
+                <span class="source-badge source-{{ ds.source_type }}">{{ ds.source_type }}</span>
+                {% if ds.provider %}
+                <span class="provider">{{ ds.provider }}</span>
+                {% endif %}
+                <span class="meta">{{ ds.record_count }} records · {{ ds.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>No hospital datasets stored yet.</p>
+            <p class="hint">Run a compare (any source) and datasets are persisted to the SQLite store, or import
+            a canonical dataset via <code>POST /api/v1/hospitals/import</code>.</p>
+        </div>
+        {% endif %}
+    </main>
+
+    <footer>
+        <p>Built on the Universal Hospital Website Intelligence Extractor</p>
+    </footer>
+</body>
+</html>

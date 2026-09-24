@@ -1,0 +1,25 @@
+# MedCompare YAML demo — EXPECTED outcomes.
+# The validator computes actual results from baseline.yaml + current.yaml
+# and compares them against this file. Nothing here is fed back into the
+# computation of added/modified/unchanged/removed.
+meta:
+  label: medcompare-yaml-demo-expected
+
+added:
+  - demo_d
+
+modified:
+  - demo_a
+
+unchanged:
+  - demo_b
+  - demo_c
+
+removed: []
+
+# Count of scalar values equal to "UNKNOWN" across current.yaml hospital records.
+expected_unknown_count: 6
+
+expected_conflict: true
+
+expected_minimum_provenance_records: 4
