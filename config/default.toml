@@ -1,5 +1,7 @@
 [extraction]
-# How UNKNOWN boolean intake fields appear in the final master CSV.
-# "false" maps UNKNOWN -> FALSE in the submission (recorded in the quality
-# report); "keep_unknown" leaves UNKNOWN values untouched.
-boolean_unknown_policy = "false"
+# How UNKNOWN boolean intake fields appear in the final master CSV/XLSX.
+# "keep_unknown" (default) preserves UNKNOWN so an unresolved capability is not
+# reported as verified absence. "false" is an explicit legacy compatibility mode
+# for downstream consumers that only accept TRUE/FALSE; each conversion is
+# recorded in the quality report.
+boolean_unknown_policy = "keep_unknown"

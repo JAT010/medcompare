@@ -31,7 +31,7 @@ from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.worksheet import Worksheet
 
-from hospital_extractor.config import UNKNOWN_FALSE
+from hospital_extractor.config import UNKNOWN_FALSE, UNKNOWN_POLICY_DEFAULT
 from hospital_extractor.export.master_csv import master_row_values, submit_boolean
 from hospital_extractor.models.intake import MasterIntake
 from hospital_extractor.schema.intake import (
@@ -72,7 +72,7 @@ def export_master_excel(
     intake: MasterIntake,
     output_dir: Path | str,
     *,
-    boolean_unknown_policy: str = UNKNOWN_FALSE,
+    boolean_unknown_policy: str = UNKNOWN_POLICY_DEFAULT,
     dataset: HospitalDataset | None = None,
 ) -> Path:
     """Write the master intake workbook to ``master.xlsx`` under *output_dir*.
@@ -401,7 +401,7 @@ def _boolean_state(ws: Worksheet, row: int, intake: MasterIntake, policy: str) -
     for field in INTAKE_FIELDS:
         if not field.is_boolean:
             continue
-        decision = intake.booleans.get(field.key, "unknown")
+        decision = intake.boolean_state(field.key)
         submitted = submit_boolean(decision, policy)
         items = intake.evidence.get(field.key, [])
         yes = sum(1 for item in items if item.decision == "yes")

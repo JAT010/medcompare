@@ -116,6 +116,23 @@ class MasterIntake:
             return "no"
         return "unknown"
 
+    def boolean_state(self, field_key: str) -> BooleanDecision:
+        """Explicit tri-state read for one boolean field.
+
+        Missing keys are ``unknown``, never implicitly ``no``. Export policies
+        decide separately how an UNKNOWN is submitted; the projection keeps the
+        original decision intact.
+        """
+        return self.booleans.get(field_key, "unknown")
+
+    def unknown_boolean_keys(self) -> tuple[str, ...]:
+        """Every boolean intake field whose resolved state is still ``unknown``."""
+        return tuple(
+            field.key
+            for field in INTAKE_FIELDS
+            if field.is_boolean and self.boolean_state(field.key) == "unknown"
+        )
+
     # --- serialisation ----------------------------------------------------
 
     def to_dict(self) -> dict[str, object]:
@@ -130,7 +147,7 @@ class MasterIntake:
     def _value_of(self, key: str) -> object:
         field = intake_field(key)
         if field.is_boolean:
-            return self.booleans.get(key, "unknown")
+            return self.boolean_state(key)
         return getattr(self, key)
 
     # --- validation -------------------------------------------------------

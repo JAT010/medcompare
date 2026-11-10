@@ -14,7 +14,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from hospital_extractor.config import load_config
+from hospital_extractor.config import UNKNOWN_FALSE, UNKNOWN_KEEP, load_config
 from hospital_extractor.crawler.context import CrawlLimits, build_context
 from hospital_extractor.crawler.report import CrawlReport, format_summary
 from hospital_extractor.crawler.runner import CrawlAbortedError, run_crawl
@@ -73,6 +73,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run extraction and export the master intake JSON/CSV/XLSX after the crawl",
     )
+    parser.add_argument(
+        "--boolean-unknown-policy",
+        choices=(UNKNOWN_KEEP, UNKNOWN_FALSE),
+        default=None,
+        help=(
+            "How UNKNOWN boolean intake fields are exported. "
+            f"Defaults to the config value ({UNKNOWN_KEEP}); use {UNKNOWN_FALSE} "
+            "only for legacy consumers that require TRUE/FALSE."
+        ),
+    )
     return parser
 
 
@@ -107,11 +117,22 @@ async def _run(argv: list[str] | None = None) -> int:
     print(format_summary(report))
 
     if args.export:
-        _extract_and_export(report, context.target_url, args.output_dir)
+        _extract_and_export(
+            report,
+            context.target_url,
+            args.output_dir,
+            boolean_unknown_policy=args.boolean_unknown_policy,
+        )
     return 0
 
 
-def _extract_and_export(report: CrawlReport, target_url: str, output_dir: str) -> None:
+def _extract_and_export(
+    report: CrawlReport,
+    target_url: str,
+    output_dir: str,
+    *,
+    boolean_unknown_policy: str | None = None,
+) -> None:
     """Extract a dataset from the crawled pages and write all exports."""
     pages: list[tuple[str, str]] = []
     for page in report.pages:
@@ -127,6 +148,7 @@ def _extract_and_export(report: CrawlReport, target_url: str, output_dir: str) -
         pages_skipped=report.skipped,
     )
     config = load_config()
+    policy = boolean_unknown_policy or config.boolean_unknown_policy
     dataset = build_dataset(pages, target_url=target_url, crawl_stats=crawl_stats, config=config)
 
     export_root = Path(output_dir) / "export"
@@ -139,13 +161,13 @@ def _extract_and_export(report: CrawlReport, target_url: str, output_dir: str) -
     master_csv_path, master_quality_path = export_master_csv(
         intake,
         master_dir,
-        boolean_unknown_policy=config.boolean_unknown_policy,
+        boolean_unknown_policy=policy,
         dataset=dataset,
     )
     master_xlsx_path = export_master_excel(
         intake,
         master_dir,
-        boolean_unknown_policy=config.boolean_unknown_policy,
+        boolean_unknown_policy=policy,
         dataset=dataset,
     )
 

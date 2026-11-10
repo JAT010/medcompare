@@ -5,12 +5,21 @@ venv/
 # Python caches and tooling caches
 __pycache__/
 *.py[cod]
+*.pyc
 *.egg-info/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Frontend build artifacts and dependencies (keep package-lock.json)
+frontend/node_modules/
+frontend/dist/
+frontend/.tsbuild/
+frontend/tsconfig.tsbuildinfo
+frontend/.vite/
+frontend/coverage/
 
 # Runtime data and logs (never commit scraping artifacts)
 data/

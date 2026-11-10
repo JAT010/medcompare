@@ -29,7 +29,10 @@ Eleven canonical categories feed the 25-field intake:
 
 The intake (see `schema/intake.py`) is the single output contract — one row per
 hospital with text/number/dropdown/boolean fields, booleans resolved to
-yes/no/unknown via weighted evidence.
+yes/no/unknown via weighted evidence. UNKNOWN values are preserved in CSV/XLSX
+by default; legacy consumers that require TRUE/FALSE can opt in explicitly with
+`--boolean-unknown-policy false` or `boolean_unknown_policy = "false"` in
+`config/default.toml`.
 
 ## Architecture
 

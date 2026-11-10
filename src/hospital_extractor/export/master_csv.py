@@ -24,7 +24,12 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from hospital_extractor.config import UNKNOWN_FALSE, UNKNOWN_KEEP
+from hospital_extractor.config import (
+    UNKNOWN_FALSE,
+    UNKNOWN_KEEP,
+    UNKNOWN_POLICIES,
+    UNKNOWN_POLICY_DEFAULT,
+)
 from hospital_extractor.models.intake import MasterIntake
 from hospital_extractor.schema.intake import INTAKE_FIELDS, intake_field, intake_labels
 
@@ -50,12 +55,17 @@ def submit_boolean(decision: str, policy: str) -> str:
     """Serialize a resolved boolean decision for the submission CSV.
 
     ``yes`` -> ``TRUE``, ``no`` -> ``FALSE``. ``unknown`` follows *policy*:
-    ``keep_unknown`` keeps ``UNKNOWN``; anything else submits ``FALSE``.
+    ``keep_unknown`` keeps ``UNKNOWN``; legacy ``false`` submits ``FALSE``.
+    Any other policy is rejected rather than silently converting UNKNOWN.
     """
     if decision == "yes":
         return "TRUE"
     if decision == "no":
         return "FALSE"
+    if policy not in UNKNOWN_POLICIES:
+        raise ValueError(
+            f"unknown boolean policy {policy!r}; expected one of {sorted(UNKNOWN_POLICIES)}"
+        )
     if policy == UNKNOWN_KEEP:
         return "UNKNOWN"
     return "FALSE"
@@ -65,7 +75,7 @@ def export_master_csv(
     intake: MasterIntake,
     output_dir: Path | str,
     *,
-    boolean_unknown_policy: str = UNKNOWN_FALSE,
+    boolean_unknown_policy: str = UNKNOWN_POLICY_DEFAULT,
     dataset: HospitalDataset | None = None,
 ) -> tuple[Path, Path]:
     """Write the 25-column ``master.csv`` and ``master_quality.md``.
@@ -105,7 +115,7 @@ def master_row_values(intake: MasterIntake, boolean_unknown_policy: str) -> list
 def _row_cell(intake: MasterIntake, key: str, policy: str) -> object:
     field = intake_field(key)
     if field.is_boolean:
-        return submit_boolean(intake.booleans.get(key, "unknown"), policy)
+        return submit_boolean(intake.boolean_state(key), policy)
     value = getattr(intake, key, None)
     return value if value is not None else ""
 
@@ -135,7 +145,7 @@ def _quality_report(
     for field in INTAKE_FIELDS:
         if not field.is_boolean:
             continue
-        decision = intake.booleans.get(field.key, "unknown")
+        decision = intake.boolean_state(field.key)
         submitted = submit_boolean(decision, policy)
         notes = (
             "UNKNOWN converted to FALSE by submission policy"
