@@ -24,7 +24,7 @@ from hospital_extractor.crawler.crawler import (
     DEFAULT_USER_AGENT,
 )
 from hospital_extractor.crawler.discovery import hospital_slug_from_url
-from hospital_extractor.utils.urls import validate_url
+from hospital_extractor.crawler.ssrf import check_url_safety
 
 __all__ = ["CrawlContext", "CrawlLimits", "build_context"]
 
@@ -78,11 +78,15 @@ def build_context(
 ) -> CrawlContext:
     """Validate *url* and build a :class:`CrawlContext`.
 
+    Validation is SSRF-aware (:func:`~hospital_extractor.crawler.ssrf.check_url_safety`):
+    loopback, private, link-local and metadata targets are rejected before a
+    crawl context exists.
+
     ``user_agent`` (when given) becomes the primary UA; ``fallback_user_agents``
     are tried in order if the pre-crawl probe reports the target inaccessible
     with the primary UA.
     """
-    target_url = validate_url(url)
+    target_url = check_url_safety(url)
     parts = urlsplit(target_url)
     agents = (user_agent or DEFAULT_USER_AGENT, *fallback_user_agents)
     return CrawlContext(

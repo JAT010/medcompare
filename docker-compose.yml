@@ -1,0 +1,22 @@
+﻿services:
+  postgres:
+    image: postgres:16
+    container_name: medcompare-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-medcompare}
+      POSTGRES_USER: ${POSTGRES_USER:-medcompare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medcompare_dev_only}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - medcompare_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-medcompare} -d ${POSTGRES_DB:-medcompare}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  medcompare_postgres_data:

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import heapq
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urljoin
@@ -81,8 +82,15 @@ async def run_crawl(
     run_id: str | None = None,
     include_low_value: bool = False,
     logger: logging.Logger | None = None,
+    url_guard: Callable[[str], str] | None = None,
 ) -> CrawlReport:
-    """Run the full discovery/crawl phase and return a :class:`CrawlReport`."""
+    """Run the full discovery/crawl phase and return a :class:`CrawlReport`.
+
+    ``url_guard`` revalidates the target and every redirect destination; when
+    omitted the crawler's structural guard applies. Callers that accept URLs
+    typed by users pass a DNS-resolving guard (see
+    :func:`hospital_extractor.crawler.ssrf.validate_public_url`).
+    """
     log = logger or get_logger("hospital_extractor.crawler.runner")
     output_path = Path(output_dir)
     run_key = run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
@@ -90,7 +98,7 @@ async def run_crawl(
 
     log.info("crawl_started", extra={"target_url": context.target_url})
 
-    crawler, probe, selected_ua = await _probe_with_fallback(context, log=log)
+    crawler, probe, selected_ua = await _probe_with_fallback(context, log=log, url_guard=url_guard)
     log.info(
         "access_probe",
         extra={"robots_status": probe.robots_status, "homepage_status": probe.homepage_status},
@@ -192,7 +200,7 @@ def _resource_fetcher(crawler: Crawler) -> SitemapFetcher:
 
 
 async def _probe_with_fallback(
-    context: CrawlContext, *, log: logging.Logger
+    context: CrawlContext, *, log: logging.Logger, url_guard: Callable[[str], str] | None = None
 ) -> tuple[Crawler, ProbeResult, str]:
     last_probe: ProbeResult | None = None
     for ua in context.user_agents:
@@ -203,6 +211,7 @@ async def _probe_with_fallback(
             delay=context.crawl_limits.delay,
             max_pages=context.crawl_limits.max_pages,
             max_response_bytes=context.crawl_limits.max_response_bytes,
+            url_guard=url_guard,
         )
         probe = await crawler.probe(context.target_url)
         last_probe = probe

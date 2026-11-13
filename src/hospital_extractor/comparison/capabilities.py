@@ -1,0 +1,151 @@
+"""Honest capability report for the comparison feature.
+
+Every capability the comparison UI can offer is described here from the code
+that actually exists. A capability that is not implemented reports
+``available=False`` together with the precise backend integration required, so
+the interface can say what is missing instead of pretending to work.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Mapping
+
+from hospital_extractor.comparison.schemas import CapabilityReport, CapabilityStatus
+
+__all__ = ["assess_capabilities"]
+
+_SEARCH_PROVIDER_VARS = ("MEDCOMPARE_SEARCH_PROVIDER", "TAVILY_API_KEY", "SERPAPI_API_KEY")
+_SEARCH_CLIENT_VARS = ("MEDCOMPARE_SEARCH_API_KEY", "BING_SEARCH_API_KEY", "BRAVE_SEARCH_API_KEY")
+_MODEL_KEY_VARS = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "MEDCOMPARE_MODEL_API_KEY")
+
+_SEARCH_INTEGRATION = (
+    "A server-side search provider client (for example Tavily, SerpAPI or Bing Web "
+    "Search) with its API key supplied through the server environment "
+    "(MEDCOMPARE_SEARCH_PROVIDER / MEDCOMPARE_SEARCH_API_KEY). The key must stay on "
+    "the server; no search credential belongs in frontend code."
+)
+_JOB_STORE_INTEGRATION = (
+    "A persistent job store: an Alembic migration adding crawl job rows, a worker "
+    "that executes queued extractions, and status/result endpoints "
+    "(Milestone 3: jobs and datasets)."
+)
+_MODEL_INTEGRATION = (
+    "A server-side language-model client with credentials (for example "
+    "MEDCOMPARE_MODEL_API_KEY). This codebase ships no AI SDK, so interpretation "
+    "is deterministic parsing today."
+)
+
+
+def _any_set(names: tuple[str, ...], environ: Mapping[str, str]) -> bool:
+    return any(environ.get(name) for name in names)
+
+
+def assess_capabilities(environ: Mapping[str, str] | None = None) -> CapabilityReport:
+    """Describe which comparison capabilities this deployment can actually serve."""
+    env = os.environ if environ is None else environ
+    search_env_configured = _any_set(_SEARCH_PROVIDER_VARS, env) or _any_set(
+        _SEARCH_CLIENT_VARS, env
+    )
+    model_key_configured = _any_set(_MODEL_KEY_VARS, env)
+
+    search_detail = (
+        "No search provider client exists in this codebase: there is no search "
+        "dependency, no search configuration and no search endpoint. Public "
+        "internet research cannot be performed by this deployment."
+    )
+    if search_env_configured:
+        search_detail += (
+            " Search credentials appear to be set in the environment, but no client "
+            "code reads them yet."
+        )
+
+    model_detail = (
+        "No AI/model integration is present, so ambiguous or open-ended "
+        "requests cannot be rephrased by a model. Interpretation is deterministic "
+        "clause parsing."
+    )
+    if model_key_configured:
+        model_detail += (
+            " Model credentials appear to be set in the environment, but no client "
+            "code reads them yet."
+        )
+
+    capabilities = [
+        CapabilityStatus(
+            key="registered_hospital_retrieval",
+            label="Registered hospital retrieval",
+            available=True,
+            detail=(
+                "Facilities are read from the hospital registry tables through the "
+                "existing service layer."
+            ),
+            implementation="GET /api/v1/facilities and GET /api/v1/facilities/{facility_id}",
+        ),
+        CapabilityStatus(
+            key="standard_comparison",
+            label="Standard comparison",
+            available=True,
+            detail=(
+                "The twelve standard criteria are evaluated against stored evidence; "
+                "criteria without evidence are reported as unavailable, never as no."
+            ),
+            implementation="POST /api/v1/comparison",
+        ),
+        CapabilityStatus(
+            key="custom_prompt_interpretation",
+            label="Custom prompt interpretation",
+            available=True,
+            detail=(
+                "User wording is parsed deterministically into criteria with evidence "
+                "requirements and clarification questions."
+            ),
+            implementation="POST /api/v1/comparison/interpret",
+        ),
+        CapabilityStatus(
+            key="model_assisted_interpretation",
+            label="Model-assisted interpretation",
+            available=False,
+            detail=model_detail,
+            required_integration=_MODEL_INTEGRATION,
+        ),
+        CapabilityStatus(
+            key="public_internet_search",
+            label="Public internet search",
+            available=False,
+            detail=search_detail,
+            required_integration=_SEARCH_INTEGRATION,
+        ),
+        CapabilityStatus(
+            key="website_crawling_on_request",
+            label="Website crawling on request",
+            available=True,
+            detail=(
+                "Explicitly requested URL extraction runs through the existing crawl "
+                "and extraction pipeline with bounded limits and SSRF validation. "
+                "Execution is synchronous within the request."
+            ),
+            implementation="POST /api/v1/crawl/extract",
+        ),
+        CapabilityStatus(
+            key="asynchronous_crawl_jobs",
+            label="Asynchronous crawl jobs",
+            available=False,
+            detail=(
+                "There is no persistent job table, queue or worker, so no durable job "
+                "id, status polling or later result retrieval can be offered."
+            ),
+            required_integration=_JOB_STORE_INTEGRATION,
+        ),
+        CapabilityStatus(
+            key="evidence_provenance",
+            label="Evidence provenance and citations",
+            available=True,
+            detail=(
+                "Each finding carries its source, source name, source URL, retrieval "
+                "and publication dates, and an availability status."
+            ),
+            implementation="comparison.schemas.EvidenceItem",
+        ),
+    ]
+    return CapabilityReport(capabilities=capabilities)

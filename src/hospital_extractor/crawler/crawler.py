@@ -18,11 +18,13 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
 import httpx
+
+from hospital_extractor.crawler.ssrf import check_url_safety
 
 DEFAULT_USER_AGENT = (
     "HospitalExtractor/0.1 (+https://github.com/kartik00052/hospital-website-extractor)"
@@ -35,6 +37,12 @@ DEFAULT_MAX_RESPONSE_BYTES = 20 * 1024 * 1024
 PROBE_BODY_LIMIT = 64 * 1024
 
 RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+# Redirects are followed manually so every destination is revalidated before a
+# request is sent to it; auto-following would let a public host redirect the
+# crawler into a private network.
+MAX_REDIRECTS = 20
+REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 # Content types we consider HTML-like page content.
 HTML_CONTENT_TYPES = frozenset(
@@ -165,6 +173,7 @@ class Crawler:
         max_pages: int = DEFAULT_MAX_PAGES,
         max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
         client: httpx.AsyncClient | None = None,
+        url_guard: Callable[[str], str] | None = None,
     ) -> None:
         self.user_agent = user_agent
         self.timeout = timeout
@@ -173,10 +182,11 @@ class Crawler:
         self.delay = delay
         self.max_pages = max_pages
         self.max_response_bytes = max_response_bytes
+        self._url_guard: Callable[[str], str] = url_guard or check_url_safety
         self._client = client or httpx.AsyncClient(
             headers={"User-Agent": user_agent},
             timeout=timeout,
-            follow_redirects=True,
+            follow_redirects=False,
         )
         self._owns_client = client is None
         self._pages_fetched = 0
@@ -276,8 +286,35 @@ class Crawler:
         ) from last_error
 
     async def _stream_once(self, url: str, *, body_limit: int | None = None) -> FetchResult:
-        async with self._client.stream("GET", url) as response:
+        """GET *url*, following redirects manually with a safety check per hop.
+
+        The guard runs against the request URL *and* every redirect destination
+        before any request is sent, so an open redirect on an otherwise public
+        site cannot move the crawler onto a private address.
+        """
+        current = self._url_guard(url)
+        for hop in range(MAX_REDIRECTS + 1):
+            response = await self._send_no_redirect(current)
+            if response.status_code not in REDIRECT_STATUSES:
+                return await self._finish(response, body_limit)
+            location = response.headers.get("location")
+            if not location:
+                # Malformed redirect: report the response itself instead of failing.
+                return await self._finish(response, body_limit)
+            await response.aclose()
+            if hop >= MAX_REDIRECTS:
+                raise FetchError(f"too many redirects fetching {url!r}")
+            current = self._url_guard(urljoin(current, location))
+        raise FetchError(f"too many redirects fetching {url!r}")
+
+    async def _finish(
+        self, response: httpx.Response, body_limit: int | None
+    ) -> FetchResult:
+        """Read a non-redirect response body (bounded) and close the response."""
+        try:
             content, truncated = await self._read_body_limited(response, body_limit)
+        finally:
+            await response.aclose()
         return FetchResult(
             status_code=response.status_code,
             content=content,
@@ -285,6 +322,11 @@ class Crawler:
             content_type=response.headers.get("content-type"),
             truncated=truncated,
         )
+
+    async def _send_no_redirect(self, url: str) -> httpx.Response:
+        """Send one streamed GET request without following redirects."""
+        request = self._client.build_request("GET", url)
+        return await self._client.send(request, stream=True, follow_redirects=False)
 
     async def _read_body_limited(
         self, response: httpx.Response, body_limit: int | None = None

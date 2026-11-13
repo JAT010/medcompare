@@ -113,6 +113,10 @@ async def _run(argv: list[str] | None = None) -> int:
     except CrawlAbortedError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except InvalidURLError as exc:
+        # Includes SSRF rejections raised while following a redirect.
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     print(format_summary(report))
 

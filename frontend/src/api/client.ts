@@ -1,0 +1,166 @@
+/**
+ * Typed fetch client for the MedCompare API.
+ *
+ * Errors are surfaced honestly: a thrown ApiError keeps the HTTP status and the
+ * server's structured detail, so the UI can show what is actually missing
+ * (for example the search integration required for public internet research)
+ * instead of inventing a friendlier but false message.
+ */
+
+import type {
+  CapabilityReport,
+  ComparisonRequest,
+  ComparisonResponse,
+  CrawlRequest,
+  CrawlResponse,
+  CrawlRunDetail,
+  FacilityListResponse,
+  InterpretResponse,
+} from "./types";
+
+const configuredBase =
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
+export const API_BASE_URL = `${String(configuredBase).replace(/\/+$/, "")}/api/v1`;
+
+interface ServerIssue {
+  msg?: string;
+}
+
+function messageFromDetail(status: number, detail: unknown): string {
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((issue: ServerIssue | null) =>
+        issue && typeof issue.msg === "string" ? issue.msg : "",
+      )
+      .filter(Boolean);
+    if (messages.length > 0) {
+      return messages.join(" ");
+    }
+  }
+  if (detail !== null && typeof detail === "object" && "message" in detail) {
+    const message = (detail as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+  }
+  if (status === 501) {
+    return "This capability is not implemented in this deployment.";
+  }
+  return `Request failed with status ${status}.`;
+}
+
+function integrationFromDetail(detail: unknown): string | null {
+  if (detail !== null && typeof detail === "object" && !Array.isArray(detail)) {
+    const integration = (detail as { required_integration?: unknown })
+      .required_integration;
+    if (typeof integration === "string" && integration.trim()) {
+      return integration;
+    }
+  }
+  return null;
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly detail: unknown;
+  readonly errorCode: string | null;
+  readonly requiredIntegration: string | null;
+
+  constructor(status: number, detail: unknown) {
+    super(messageFromDetail(status, detail));
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+    this.errorCode =
+      detail !== null &&
+      typeof detail === "object" &&
+      !Array.isArray(detail) &&
+      typeof (detail as { error?: unknown }).error === "string"
+        ? (detail as { error: string }).error
+        : null;
+    this.requiredIntegration = integrationFromDetail(detail);
+  }
+}
+
+export function toMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "Something went wrong while contacting the MedCompare server.";
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: { "content-type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
+  });
+  if (!response.ok) {
+    let detail: unknown = null;
+    try {
+      const body = (await response.json()) as { detail?: unknown } | null;
+      detail = body?.detail ?? body ?? null;
+    } catch {
+      detail = null;
+    }
+    throw new ApiError(response.status, detail);
+  }
+  return (await response.json()) as T;
+}
+
+export function getCapabilities(): Promise<CapabilityReport> {
+  return request<CapabilityReport>("/comparison/capabilities");
+}
+
+export function searchFacilities(query: string): Promise<FacilityListResponse> {
+  const params = new URLSearchParams();
+  const trimmed = query.trim();
+  if (trimmed) {
+    params.set("q", trimmed);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<FacilityListResponse>(`/facilities${suffix}`);
+}
+
+export function interpretPrompt(prompt: string): Promise<InterpretResponse> {
+  return request<InterpretResponse>("/comparison/interpret", {
+    method: "POST",
+    body: JSON.stringify({ prompt }),
+  });
+}
+
+export function compareHospitals(
+  body: ComparisonRequest,
+): Promise<ComparisonResponse> {
+  return request<ComparisonResponse>("/comparison", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function extractFromWebsite(
+  body: CrawlRequest,
+): Promise<CrawlResponse> {
+  return request<CrawlResponse>("/crawl/extract", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getCrawlRun(
+  crawlRunId: string,
+  options?: { facility_id?: string; comparison_subject_id?: string },
+): Promise<CrawlRunDetail> {
+  const params = new URLSearchParams();
+  if (options?.facility_id) params.set("facility_id", options.facility_id);
+  if (options?.comparison_subject_id)
+    params.set("comparison_subject_id", options.comparison_subject_id);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<CrawlRunDetail>(`/crawl/runs/${crawlRunId}${suffix}`);
+}

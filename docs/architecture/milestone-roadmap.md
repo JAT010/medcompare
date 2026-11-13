@@ -2,7 +2,7 @@
 
 Roadmap for evolving this repository into the complete MedCompare internal application. Milestone 0 is scaffolding/documentation/baseline only.
 
-## Milestone 0 — Foundation stabilization and application scaffolding (current)
+## Milestone 0 — Foundation stabilization and application scaffolding (**complete**)
 
 **Scope**
 - Inspect/preserve existing work; verify recommendation and tri-state changes; record baseline validation.
@@ -11,25 +11,22 @@ Roadmap for evolving this repository into the complete MedCompare internal appli
 - Add minimal React + TypeScript + Vite frontend scaffold: strict TS, app shell, env-based API base URL, production build; no fake hospital/recommendation data.
 - Preserve existing CLI, extraction, intake/tri-state, export, and recommendation behavior.
 
-**Acceptance criteria**
-- Baseline and post-change `uv run --frozen pytest -q`, `ruff check .`, `mypy src`, `git diff --check` pass.
-- FastAPI health endpoint returns healthy response without database dependency.
-- Frontend installs and builds for production.
-- CLI remains runnable; `hospital_extractor.recommendation` imports successfully.
-- No circular imports introduced into domain packages.
-- No PostgreSQL tables/migrations, registry/auth/recommendation APIs, jobs, dataset persistence, or full UI implemented.
+**Status:** checkpoint committed as `3bf78eb` (`feat: establish MedCompare application foundation`).
 
-## Milestone 1 — Persistence foundation and hospital registry
+## Milestone 1 — Persistence foundation and hospital registry (**implemented; PostgreSQL runtime verification pending environment**)
 
 **Scope**
-- PostgreSQL integration, SQLAlchemy models/repositories, Alembic migrations.
-- `HospitalOrganization` and `HospitalFacility` registry (facility immutable UUID, organization ownership, canonical URL/domain/slug hints, location metadata, status).
-- Idempotent/conflict-safe facility registration rules; no merging distinct facilities by shared brand/domain.
+- PostgreSQL integration, SQLAlchemy 2.x (sync) + Alembic + Psycopg 3; explicit sessions, pooling, `pool_pre_ping`, no startup `create_all()`.
+- `HospitalOrganization` and `HospitalFacility` registry (immutable facility UUID, organization ownership, nullable/canonical URL, domain/location metadata, status, soft deactivation).
+- Deterministic URL normalization and conflict-safe registration (unique normalized canonical URL when present; shared domains allowed; no silent merges).
+- Repository/service layer, initial Alembic migration, Docker Compose (Postgres 16), registry tests.
 
-**Acceptance criteria**
-- Migrations create registry schema; facility UUIDs are immutable.
-- Registry service/repository tests cover create/read/list uniqueness and organization-facility relationships.
-- Existing extraction/recommendation/CLI behavior remains unchanged without requiring DB for current CLI flows.
+**Acceptance criteria (code/tests)**
+- Migration defines registry schema; facility UUIDs are immutable and application-generated.
+- Registry service/repository + SQLite-backed tests cover identity, uniqueness/conflicts, org-facility relationships, and acceptance scenarios.
+- Existing extraction/recommendation/CLI behavior unchanged and usable without DB for current flows.
+
+**Runtime notes:** PostgreSQL integration tests and Alembic upgrade/downgrade against a live PostgreSQL instance require Docker/PostgreSQL + `TEST_DATABASE_URL` (not executed in this environment; see completion report). SQLite passing does not prove PostgreSQL compatibility.
 
 ## Milestone 2 — Authentication and authorization
 

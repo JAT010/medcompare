@@ -1,18 +1,24 @@
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+import { API_BASE_URL } from "./api/client";
+import CapabilityPanel from "./components/CapabilityPanel";
+import ComparisonWorkspace from "./components/ComparisonWorkspace";
 
 export default function App() {
   return (
     <main className="app-shell">
       <header className="app-header">
         <h1>MedCompare</h1>
-        <p className="subtitle">Internal hospital intelligence and recommendation platform</p>
-      </header>
-      <section className="app-content" aria-label="Application status">
-        <p>Application scaffold initialized.</p>
-        <p>
-          API base URL: <code>{apiBaseUrl}</code>
+        <p className="subtitle">
+          Hospital comparison backed by evidence from this server, on-request
+          website crawling, and nothing that does not exist.
         </p>
-      </section>
+      </header>
+      <CapabilityPanel />
+      <ComparisonWorkspace />
+      <footer className="app-footer">
+        <p className="muted">
+          API base URL: <code>{API_BASE_URL}</code>
+        </p>
+      </footer>
     </main>
   );
 }

@@ -86,7 +86,12 @@ def normalize_url(url: str) -> str:
         port = None
     if port is not None and str(port) == _DEFAULT_PORTS.get(scheme):
         port = None
-    netloc = host if port is None else f"{host}:{port}"
+    # IPv6 literals must stay bracketed in the authority component, otherwise
+    # the host is re-parsed as everything before the first colon (e.g.
+    # "fd00::1" would be reinterpreted as host "fd00"), which also defeats
+    # address-based checks downstream.
+    authority_host = f"[{host}]" if ":" in host else host
+    netloc = authority_host if port is None else f"{authority_host}:{port}"
 
     path = parts.path or "/"
     path = _clean_path(path)
