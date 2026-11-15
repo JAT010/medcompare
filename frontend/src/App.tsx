@@ -1,6 +1,7 @@
 import { API_BASE_URL } from "./api/client";
 import CapabilityPanel from "./components/CapabilityPanel";
 import ComparisonWorkspace from "./components/ComparisonWorkspace";
+import ConsistencyAuditPanel from "./components/ConsistencyAuditPanel";
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
       </header>
       <CapabilityPanel />
       <ComparisonWorkspace />
+      <ConsistencyAuditPanel />
       <footer className="app-footer">
         <p className="muted">
           Live API base: <code>{API_BASE_URL}</code> · In demonstration mode, workflow uses explicitly labeled local sample

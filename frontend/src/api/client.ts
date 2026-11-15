@@ -11,6 +11,8 @@ import type {
   CapabilityReport,
   ComparisonRequest,
   ComparisonResponse,
+  ConsistencyAuditRequest,
+  ConsistencyAuditResponse,
   CrawlRequest,
   CrawlResponse,
   CrawlRunDetail,
@@ -20,6 +22,7 @@ import type {
 import {
   demoCapabilitiesData,
   demoComparisonData,
+  demoConsistencyAuditData,
   demoCrawlData,
   demoCrawlRunData,
   demoFacilitiesData,
@@ -162,6 +165,16 @@ export function compareHospitals(
     return Promise.resolve(demoComparisonData(body));
   }
   return request<ComparisonResponse>("/comparison", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function auditConsistency(
+  body: ConsistencyAuditRequest,
+): Promise<ConsistencyAuditResponse> {
+  if (isDemoMode()) return Promise.resolve(demoConsistencyAuditData(body.facility_id));
+  return request<ConsistencyAuditResponse>("/consistency/audit", {
     method: "POST",
     body: JSON.stringify(body),
   });

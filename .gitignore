@@ -24,6 +24,7 @@ frontend/coverage/
 # Runtime data and logs (never commit scraping artifacts)
 data/
 logs/
+*.log
 *.xlsx
 *.csv
 

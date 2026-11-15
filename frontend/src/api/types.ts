@@ -155,6 +155,89 @@ export interface ComparisonResponse {
   disclaimer: string;
 }
 
+export type AuditStatus =
+  | "consistent"
+  | "differs"
+  | "missing_from_website"
+  | "missing_from_internal_record"
+  | "potentially_outdated"
+  | "unverifiable";
+
+export interface AuditSourceValue {
+  source: "internal_record" | "website_crawl";
+  source_name: string;
+  value: string;
+  source_url: string | null;
+  retrieved_at: string | null;
+  confidence: number | null;
+  note: string | null;
+}
+
+export interface AuditFinding {
+  field_key: string;
+  label: string;
+  status: AuditStatus;
+  internal: AuditSourceValue | null;
+  website: AuditSourceValue | null;
+  explanation: string;
+  requires_authorized_integration: boolean;
+}
+
+export interface AuditSummary {
+  findings_total: number;
+  consistent: number;
+  differs: number;
+  missing_from_website: number;
+  missing_from_internal_record: number;
+  potentially_outdated: number;
+  unverifiable: number;
+}
+
+export interface InternalRecordSummary {
+  facility_id: string;
+  name: string;
+  organization_name: string | null;
+  canonical_url: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
+  updated_at: string | null;
+}
+
+export interface WebsiteSnapshotSummary {
+  crawl_run_id: string;
+  status: CrawlRunStatusValue;
+  target_url: string;
+  requested_url: string;
+  hospital_name: string | null;
+  pages_fetched: number;
+  evidence_count: number;
+  usable_for_comparison: boolean;
+  requested_at: string | null;
+  completed_at: string | null;
+  retrieved_at: string | null;
+}
+
+export interface ConsistencyAuditRequest {
+  facility_id: string;
+  crawl_run_id?: string | null;
+}
+
+export interface ConsistencyAuditResponse {
+  facility_id: string;
+  facility_name: string;
+  organization_name: string | null;
+  branch_identity_note: string;
+  internal_record: InternalRecordSummary;
+  website_snapshot: WebsiteSnapshotSummary | null;
+  findings: AuditFinding[];
+  summary: AuditSummary;
+  warnings: string[];
+  disclaimer: string;
+}
+
 export interface CapabilityStatus {
   key: string;
   label: string;

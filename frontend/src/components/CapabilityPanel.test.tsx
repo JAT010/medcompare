@@ -1,4 +1,5 @@
 ﻿import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import CapabilityPanel from "./CapabilityPanel";
 
@@ -53,4 +54,18 @@ it("reports when the capability report itself cannot be loaded", async () => {
 
   expect(await screen.findByText(/Cannot reach the live MedCompare server/)).toBeInTheDocument();
   expect(screen.getByText(/connection refused/)).toBeInTheDocument();
+});
+
+it("transitions to explicitly labelled demo capabilities after a live failure", async () => {
+  fetchMock.mockRejectedValue(new Error("connection refused"));
+  const user = userEvent.setup();
+
+  render(<CapabilityPanel />);
+
+  await user.click(await screen.findByRole("button", { name: "Enable demonstration mode" }));
+
+  expect(await screen.findByText(/Demonstration mode is ON/)).toBeInTheDocument();
+  expect(screen.getByText("Database-to-website consistency audit")).toBeInTheDocument();
+  expect(screen.getByText("Registered hospital retrieval")).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });
