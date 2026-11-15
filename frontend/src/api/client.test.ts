@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
+  auditConsistency,
   compareHospitals,
   interpretPrompt,
   searchFacilities,
   toMessage,
 } from "./client";
+import { DEMO_MODE_KEY, demoFacilitiesData } from "./demo";
 import type { ComparisonRequest } from "./types";
 
 const fetchMock = vi.fn();
@@ -21,6 +23,7 @@ function reply(status: number, body: unknown) {
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockReset();
+  window.localStorage.clear();
 });
 
 const REQUEST: ComparisonRequest = {
@@ -42,6 +45,28 @@ describe("client", () => {
     expect(url).toContain("/api/v1/comparison");
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toMatchObject({ scope: "standard_12" });
+  });
+
+  it("posts a consistency audit for one physical facility", async () => {
+    fetchMock.mockResolvedValue(reply(200, { facility_id: "facility-a" }));
+
+    await auditConsistency({ facility_id: "facility-a" });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/consistency/audit");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ facility_id: "facility-a" });
+  });
+
+  it("returns explicitly labelled demo audit data without calling the API", async () => {
+    window.localStorage.setItem(DEMO_MODE_KEY, "1");
+    const facilityId = demoFacilitiesData.items[0]!.id;
+
+    const result = await auditConsistency({ facility_id: facilityId });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.facility_id).toBe(facilityId);
+    expect(result.warnings.join(" ")).toContain("DEMONSTRATION DATA");
   });
 
   it("encodes the facility search query", async () => {

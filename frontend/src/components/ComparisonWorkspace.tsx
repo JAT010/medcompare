@@ -23,6 +23,7 @@ import type {
   HospitalInput,
   InterpretResponse,
 } from "../api/types";
+import { useDemoMode } from "../api/useDemoMode";
 import ComparisonMatrix from "./ComparisonMatrix";
 
 const MAX_HOSPITALS = 6;
@@ -555,6 +556,7 @@ function comparisonBlockReason(choice: Choice, source: EvidenceSource): string |
 }
 
 export default function ComparisonWorkspace() {
+  const demo = useDemoMode();
   const [choices, setChoices] = useState<Choice[]>([]);
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [identityNote, setIdentityNote] = useState<string | null>(null);
@@ -584,6 +586,7 @@ export default function ComparisonWorkspace() {
   const requestSeqRef = useRef<Record<string, number>>({});
   const recoverySeqRef = useRef<Record<string, number>>({});
   const recoveredRef = useRef(false);
+  const demoRef = useRef(demo);
 
   function bumpRequestSeq(key: string): number {
     const next = (requestSeqRef.current[key] ?? 0) + 1;
@@ -631,10 +634,19 @@ export default function ComparisonWorkspace() {
   }
 
   useEffect(() => {
+    if (demoRef.current !== demo) {
+      demoRef.current = demo;
+      setChoices([]);
+      setResult(null);
+      setCompareError(null);
+      setCrawlErrors({});
+      setCrawlBusyKeys({});
+      safeWriteRefs([]);
+    }
     void (async () => {
       await loadFacilities("");
     })();
-  }, []);
+  }, [demo]);
 
   useEffect(() => {
     if (recoveredRef.current) return;

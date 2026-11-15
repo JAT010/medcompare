@@ -1,13 +1,14 @@
 ﻿import { useEffect, useState } from "react";
 import { getCapabilities, toMessage } from "../api/client";
-import { isDemoMode, setDemoMode } from "../api/demo";
+import { setDemoMode } from "../api/demo";
+import { useDemoMode } from "../api/useDemoMode";
 import type { CapabilityReport } from "../api/types";
 
 export default function CapabilityPanel() {
   const [report, setReport] = useState<CapabilityReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [demo, setDemo] = useState<boolean>(() => isDemoMode());
+  const demo = useDemoMode();
 
   useEffect(() => {
     let cancelled = false;
@@ -32,9 +33,7 @@ export default function CapabilityPanel() {
   }, [demo]);
 
   function toggleDemo(): void {
-    const next = !demo;
-    setDemoMode(next);
-    setDemo(next);
+    setDemoMode(!demo);
   }
 
   if (loading) return <p className="muted">Checking server capabilities...</p>;

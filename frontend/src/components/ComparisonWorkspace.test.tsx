@@ -1,6 +1,7 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEMO_MODE_KEY, setDemoMode } from "../api/demo";
 import ComparisonWorkspace from "./ComparisonWorkspace";
 
 const fetchMock = vi.fn();
@@ -275,11 +276,13 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockReset();
   sessionStorage.clear();
+  window.localStorage.removeItem(DEMO_MODE_KEY);
 });
 
 afterEach(() => {
   cleanup();
   sessionStorage.clear();
+  window.localStorage.removeItem(DEMO_MODE_KEY);
 });
 
 async function selectTwoHospitals(user: ReturnType<typeof userEvent.setup>) {
@@ -835,5 +838,20 @@ describe("P0.1 lifecycle hardening", () => {
     const unreg = stored.find((r: { kind: string }) => r.kind === "unregistered");
     expect(unreg.crawlRunId).toBe(RUN_U);
     expect(unreg.comparisonSubjectId).toBe(SUBJECT_U);
+  });
+
+  it("switches to clearly labelled demo facilities when the live registry is unreachable", async () => {
+    fetchMock.mockRejectedValue(new Error("connection refused"));
+    render(<ComparisonWorkspace />);
+
+    expect(await screen.findByText(/Could not load registered facilities/)).toBeInTheDocument();
+
+    act(() => setDemoMode(true));
+
+    expect(
+      await screen.findByLabelText(/^Northgate General Hospital \(demo\)/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Could not load registered facilities/)).not.toBeInTheDocument();
+    expect(screen.getByText(/DEMONSTRATION DATA/)).toBeInTheDocument();
   });
 });

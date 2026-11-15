@@ -103,6 +103,36 @@ def assess_capabilities(environ: Mapping[str, str] | None = None) -> CapabilityR
             implementation="POST /api/v1/comparison/interpret",
         ),
         CapabilityStatus(
+            key="database_website_consistency_audit",
+            label="Database-to-website consistency audit",
+            available=True,
+            detail=(
+                "Compares the stored registry record of one physical facility with a "
+                "persisted website extraction. Findings distinguish consistent, differing, "
+                "missing and potentially outdated information; missing data is never "
+                "treated as proof of absence."
+            ),
+            implementation=(
+                "POST /api/v1/consistency/audit and "
+                "GET /api/v1/consistency/audit/{facility_id}"
+            ),
+        ),
+        CapabilityStatus(
+            key="authorized_hospital_system_integration",
+            label="Authorized hospital-system integration",
+            available=False,
+            detail=(
+                "No live hospital API or database connection is configured. The internal "
+                "side of an audit is the MedCompare registry record, not the hospital's "
+                "own system."
+            ),
+            required_integration=(
+                "An authorized hospital API/database connection with scoped credentials, "
+                "access controls and an agreed data contract. Verification of service "
+                "fields against the hospital's own database depends on this integration."
+            ),
+        ),
+        CapabilityStatus(
             key="model_assisted_interpretation",
             label="Model-assisted interpretation",
             available=False,

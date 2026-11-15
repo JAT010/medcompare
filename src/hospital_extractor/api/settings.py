@@ -27,7 +27,13 @@ class ApiSettings(BaseSettings):
     # Browser origins allowed to call the API (Vite dev server by default).
     # Override with MEDCOMPARE_CORS_ORIGINS as a JSON list.
     cors_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
+            "http://localhost:3000",
+        ]
     )
 
     # Website extraction runs inside the request; this bounds how long one may
