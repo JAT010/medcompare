@@ -17,6 +17,15 @@ import type {
   FacilityListResponse,
   InterpretResponse,
 } from "./types";
+import {
+  demoCapabilitiesData,
+  demoComparisonData,
+  demoCrawlData,
+  demoCrawlRunData,
+  demoFacilitiesData,
+  demoInterpretData,
+  isDemoMode,
+} from "./demo";
 
 const configuredBase =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -115,10 +124,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getCapabilities(): Promise<CapabilityReport> {
+  if (isDemoMode()) return Promise.resolve(demoCapabilitiesData);
   return request<CapabilityReport>("/comparison/capabilities");
 }
 
 export function searchFacilities(query: string): Promise<FacilityListResponse> {
+  if (isDemoMode()) {
+    const data = demoFacilitiesData;
+    const q = query.trim().toLowerCase();
+    if (!q) return Promise.resolve(data);
+    return Promise.resolve({ ...data, items: data.items.filter((f) => f.name.toLowerCase().includes(q)) });
+  }
   const params = new URLSearchParams();
   const trimmed = query.trim();
   if (trimmed) {
@@ -129,6 +145,7 @@ export function searchFacilities(query: string): Promise<FacilityListResponse> {
 }
 
 export function interpretPrompt(prompt: string): Promise<InterpretResponse> {
+  if (isDemoMode()) return Promise.resolve(demoInterpretData(prompt));
   return request<InterpretResponse>("/comparison/interpret", {
     method: "POST",
     body: JSON.stringify({ prompt }),
@@ -138,6 +155,12 @@ export function interpretPrompt(prompt: string): Promise<InterpretResponse> {
 export function compareHospitals(
   body: ComparisonRequest,
 ): Promise<ComparisonResponse> {
+  if (isDemoMode()) {
+    if (body.source === "public_research") {
+      return Promise.reject(new ApiError(501, { error: "public_research_not_configured", message: "DEMONSTRATION DATA: Public internet research is not implemented and cannot be performed in demo mode.", required_integration: "A server-side search provider with an API key." }));
+    }
+    return Promise.resolve(demoComparisonData(body));
+  }
   return request<ComparisonResponse>("/comparison", {
     method: "POST",
     body: JSON.stringify(body),
@@ -147,6 +170,7 @@ export function compareHospitals(
 export function extractFromWebsite(
   body: CrawlRequest,
 ): Promise<CrawlResponse> {
+  if (isDemoMode()) return Promise.resolve(demoCrawlData(body));
   return request<CrawlResponse>("/crawl/extract", {
     method: "POST",
     body: JSON.stringify(body),
@@ -157,6 +181,7 @@ export function getCrawlRun(
   crawlRunId: string,
   options?: { facility_id?: string; comparison_subject_id?: string },
 ): Promise<CrawlRunDetail> {
+  if (isDemoMode()) return Promise.resolve(demoCrawlRunData("https://demo.example/"));
   const params = new URLSearchParams();
   if (options?.facility_id) params.set("facility_id", options.facility_id);
   if (options?.comparison_subject_id)

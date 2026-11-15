@@ -8,15 +8,16 @@ export default function App() {
       <header className="app-header">
         <h1>MedCompare</h1>
         <p className="subtitle">
-          Hospital comparison backed by evidence from this server, on-request
-          website crawling, and nothing that does not exist.
+          Evidence-based hospital comparison: interpret criteria, select hospitals, gather evidence, and compare with
+          provenance. Unsupported capabilities are shown honestly (never fabricated).
         </p>
       </header>
       <CapabilityPanel />
       <ComparisonWorkspace />
       <footer className="app-footer">
         <p className="muted">
-          API base URL: <code>{API_BASE_URL}</code>
+          Live API base: <code>{API_BASE_URL}</code> · In demonstration mode, workflow uses explicitly labeled local sample
+          data (not live backend/crawl/registry).
         </p>
       </footer>
     </main>

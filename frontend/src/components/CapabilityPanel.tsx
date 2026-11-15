@@ -1,16 +1,13 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { getCapabilities, toMessage } from "../api/client";
+import { isDemoMode, setDemoMode } from "../api/demo";
 import type { CapabilityReport } from "../api/types";
 
-/**
- * Shows what this deployment can actually do, including the integrations that
- * are missing. Rendered from the server's capability report so the UI never
- * claims a feature the backend cannot serve.
- */
 export default function CapabilityPanel() {
   const [report, setReport] = useState<CapabilityReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [demo, setDemo] = useState<boolean>(() => isDemoMode());
 
   useEffect(() => {
     let cancelled = false;
@@ -18,62 +15,84 @@ export default function CapabilityPanel() {
       .then((data) => {
         if (!cancelled) {
           setReport(data);
+          setError(null);
           setLoading(false);
         }
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
           setError(toMessage(cause));
+          setReport(null);
           setLoading(false);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [demo]);
 
-  if (loading) {
-    return <p className="muted">Checking server capabilities…</p>;
+  function toggleDemo(): void {
+    const next = !demo;
+    setDemoMode(next);
+    setDemo(next);
   }
-  if (error) {
+
+  if (loading) return <p className="muted">Checking server capabilities...</p>;
+
+  if (error && !demo) {
     return (
-      <p className="callout callout-error" role="alert">
-        Could not load the capability report from the MedCompare server: {error}
-      </p>
+      <section aria-labelledby="capabilities-heading" className="panel">
+        <h2 id="capabilities-heading">Server connection</h2>
+        <p className="callout callout-error" role="alert">
+          Cannot reach the live MedCompare server to load capabilities: {error}
+        </p>
+        <p className="muted">
+          If PostgreSQL/backend services are unavailable, enable <strong>Demonstration mode</strong> to walk through the
+          full UI flow with explicitly labeled sample data (not live API responses, not real crawls, not real registry
+          evidence).
+        </p>
+        <button type="button" className="primary" onClick={toggleDemo}>
+          Enable demonstration mode
+        </button>
+      </section>
     );
   }
-  if (!report) {
-    return null;
-  }
+
+  if (!report) return null;
 
   return (
     <section aria-labelledby="capabilities-heading" className="panel">
-      <h2 id="capabilities-heading">What this server can do</h2>
-      <p className="muted">
-        Loaded from <code>GET /api/v1/comparison/capabilities</code>. Anything
-        marked unavailable is reported as missing, never simulated.
-      </p>
+      <div className="capability-header">
+        <h2 id="capabilities-heading">What this server can do</h2>
+        <button type="button" onClick={toggleDemo} aria-pressed={demo}>
+          {demo ? "Disable demonstration mode" : "Enable demonstration mode"}
+        </button>
+      </div>
+      {demo ? (
+        <p className="callout callout-warning" role="status">
+          <strong>Demonstration mode is ON.</strong> Data shown in the workflow is locally simulated sample data for UI
+          walkthrough only — not from the live backend, not a real hospital website crawl, and not from the registry
+          database.
+        </p>
+      ) : (
+        <p className="muted">
+          Loaded from <code>GET /api/v1/comparison/capabilities</code>. Anything marked unavailable is reported as
+          missing, never simulated.
+        </p>
+      )}
       <ul className="capability-list">
         {report.capabilities.map((capability) => (
           <li key={capability.key} className="capability-item">
             <div className="capability-title">
               <span>{capability.label}</span>
-              <span
-                className={
-                  capability.available ? "badge badge-ok" : "badge badge-missing"
-                }
-              >
+              <span className={capability.available ? "badge badge-ok" : "badge badge-missing"}>
                 {capability.available ? "Available" : "Not available"}
               </span>
             </div>
             <p className="capability-detail">{capability.detail}</p>
-            {capability.implementation ? (
-              <p className="muted">How: {capability.implementation}</p>
-            ) : null}
+            {capability.implementation ? <p className="muted">How: {capability.implementation}</p> : null}
             {!capability.available && capability.required_integration ? (
-              <p className="required-integration">
-                Missing integration: {capability.required_integration}
-              </p>
+              <p className="required-integration">Missing integration: {capability.required_integration}</p>
             ) : null}
           </li>
         ))}

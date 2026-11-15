@@ -1,4 +1,4 @@
-import type { ComparisonCell, ComparisonResponse, EvidenceStatus } from "../api/types";
+﻿import type { ComparisonCell, ComparisonResponse, EvidenceStatus } from "../api/types";
 
 const STATUS_LABELS: Record<EvidenceStatus, string> = {
   available: "Available",
@@ -15,9 +15,7 @@ const STATUS_CLASSES: Record<EvidenceStatus, string> = {
 };
 
 function sourceLabel(cell: ComparisonCell): string | null {
-  if (cell.source_name) {
-    return cell.source_name;
-  }
+  if (cell.source_name) return cell.source_name;
   switch (cell.source) {
     case "medcompare_server":
       return "MedCompare server";
@@ -34,10 +32,7 @@ function sourceLabel(cell: ComparisonCell): string | null {
 
 function provenanceDate(cell: ComparisonCell): string | null {
   const raw = cell.retrieved_at ?? cell.published_at;
-  if (!raw) {
-    return null;
-  }
-  return raw.slice(0, 10);
+  return raw ? raw.slice(0, 10) : null;
 }
 
 function Cell({ cell }: { cell: ComparisonCell }) {
@@ -67,7 +62,6 @@ function Cell({ cell }: { cell: ComparisonCell }) {
   );
 }
 
-/** Renders one comparison response as an evidence matrix. No ranking, ever. */
 export default function ComparisonMatrix({ result }: { result: ComparisonResponse }) {
   return (
     <section aria-labelledby="comparison-result-heading" className="panel result-panel">
@@ -91,23 +85,16 @@ export default function ComparisonMatrix({ result }: { result: ComparisonRespons
       <ul className="plain-list source-status-list">
         {result.source_statuses.map((status) => (
           <li key={status.source}>
-            <span
-              className={
-                status.status === "active" ? "badge badge-ok" : "badge badge-missing"
-              }
-            >
+            <span className={status.status === "active" ? "badge badge-ok" : "badge badge-missing"}>
               {status.status === "active"
                 ? "Active"
                 : status.status === "not_configured"
                   ? "Not configured"
                   : "Unsupported"}
             </span>{" "}
-            <strong>{status.source.replaceAll("_", " ")}</strong> — {status.detail}
+            <strong>{status.source.replaceAll("_", " ")}</strong> – {status.detail}
             {status.required_integration ? (
-              <span className="required-integration">
-                {" "}
-                Missing integration: {status.required_integration}
-              </span>
+              <span className="required-integration"> Missing integration: {status.required_integration}</span>
             ) : null}
           </li>
         ))}
@@ -120,9 +107,7 @@ export default function ComparisonMatrix({ result }: { result: ComparisonRespons
           const percent = Math.round(entry.coverage_ratio * 100);
           return (
             <li key={entry.column_id}>
-              <strong>{column?.name ?? entry.column_id}</strong>:{" "}
-              {entry.criteria_with_evidence} of {entry.criteria_total} criteria have
-              evidence ({percent}%)
+              <strong>{column?.name ?? entry.column_id}</strong>: {entry.criteria_with_evidence} of {entry.criteria_total} criteria have evidence ({percent}%)
             </li>
           );
         })}
@@ -131,8 +116,7 @@ export default function ComparisonMatrix({ result }: { result: ComparisonRespons
       <div className="table-scroll">
         <table className="matrix-table">
           <caption className="muted">
-            Side-by-side evidence. Missing information is shown as not available,
-            never as a negative finding.
+            Side-by-side evidence. Missing information is shown as not available, never as a negative finding.
           </caption>
           <thead>
             <tr>
@@ -140,12 +124,8 @@ export default function ComparisonMatrix({ result }: { result: ComparisonRespons
               {result.columns.map((column) => (
                 <th scope="col" key={column.column_id}>
                   {column.name}
-                  {column.location ? (
-                    <span className="column-subtitle">{column.location}</span>
-                  ) : null}
-                  {column.identity_note ? (
-                    <span className="column-note">{column.identity_note}</span>
-                  ) : null}
+                  {column.location ? <span className="column-subtitle">{column.location}</span> : null}
+                  {column.identity_note ? <span className="column-note">{column.identity_note}</span> : null}
                 </th>
               ))}
             </tr>

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+﻿import { render, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import CapabilityPanel from "./CapabilityPanel";
 
@@ -7,6 +7,8 @@ const fetchMock = vi.fn();
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockReset();
+  localStorage.clear();
+  window.history.replaceState({}, "", "/");
 });
 
 const REPORT = {
@@ -49,7 +51,6 @@ it("reports when the capability report itself cannot be loaded", async () => {
 
   render(<CapabilityPanel />);
 
-  const failure = await screen.findByRole("alert");
-  expect(failure).toHaveTextContent("Could not load the capability report");
-  expect(failure).toHaveTextContent("connection refused");
+  expect(await screen.findByText(/Cannot reach the live MedCompare server/)).toBeInTheDocument();
+  expect(screen.getByText(/connection refused/)).toBeInTheDocument();
 });

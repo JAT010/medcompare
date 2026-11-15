@@ -1028,8 +1028,12 @@ export default function ComparisonWorkspace() {
       : null;
 
   return (
-    <section aria-labelledby="workspace-heading" className="panel">
+    <section aria-labelledby="workspace-heading" className="panel workspace">
       <h2 id="workspace-heading">Compare hospitals</h2>
+      <p className="muted intro">
+        Workflow: describe criteria (NL) → interpret &amp; review → select/add hospitals → choose evidence source and crawl
+        if needed → compare with provenance. Missing/unavailable evidence is shown honestly.
+      </p>
 
       <section aria-labelledby="hospitals-heading" className="step">
         <h3 id="hospitals-heading">1. Choose hospitals ({choices.length}/{MAX_HOSPITALS})</h3>
