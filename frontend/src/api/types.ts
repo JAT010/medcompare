@@ -310,3 +310,298 @@ export interface CrawlRunDetail {
   failure_code: string | null;
   failure_message: string | null;
 }
+
+export type IntegrationAuthMode = "none" | "api_key" | "bearer_token";
+export type IntegrationStatus =
+  | "not_configured"
+  | "configured"
+  | "disabled"
+  | "error";
+
+export interface FacilityIntegration {
+  id: string;
+  facility_id: string;
+  name: string;
+  connector_type: string;
+  base_url: string | null;
+  auth_mode: IntegrationAuthMode;
+  credential_env_ref: string | null;
+  config_json: Record<string, unknown>;
+  status: IntegrationStatus;
+  enabled: boolean;
+  simulated: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationListResponse {
+  facility_id: string;
+  items: FacilityIntegration[];
+}
+
+export interface IntegrationCreateRequest {
+  name: string;
+  connector_type: string;
+  base_url?: string | null;
+  auth_mode?: IntegrationAuthMode;
+  credential_env_ref?: string | null;
+  config_json?: Record<string, unknown>;
+  enabled?: boolean;
+}
+
+export interface IntegrationUpdateRequest {
+  name?: string;
+  base_url?: string | null;
+  auth_mode?: IntegrationAuthMode;
+  credential_env_ref?: string | null;
+  config_json?: Record<string, unknown>;
+  enabled?: boolean;
+  status?: IntegrationStatus;
+}
+
+export interface HospitalSnapshot {
+  id: string;
+  facility_id: string;
+  integration_id: string | null;
+  source_kind: string;
+  version_number: number;
+  content_hash: string;
+  captured_at: string;
+  captured_by: string;
+  is_simulation: boolean;
+  created_at: string;
+  provenance_json?: Record<string, unknown> | null;
+  payload_json?: Record<string, unknown> | null;
+}
+
+export interface SnapshotListResponse {
+  facility_id: string;
+  items: HospitalSnapshot[];
+  limit: number;
+  offset: number;
+}
+
+export type DetectedChangeType = "added" | "removed" | "modified";
+export type ChangeSetStatusValue =
+  | "initial_snapshot"
+  | "no_change"
+  | "changes_detected";
+
+export interface DetectedChange {
+  id: string;
+  path: string;
+  change_type: DetectedChangeType;
+  entity_name: string;
+  field: string;
+  old_value_json: unknown;
+  new_value_json: unknown;
+  source_url: string | null;
+  detected_at: string;
+}
+
+export interface ChangeSet {
+  id: string;
+  facility_id: string;
+  integration_id: string | null;
+  previous_snapshot_id: string | null;
+  snapshot_id: string;
+  status: ChangeSetStatusValue;
+  added_count: number;
+  removed_count: number;
+  modified_count: number;
+  detected_at: string;
+}
+
+export interface ChangeSetDetail extends ChangeSet {
+  changes: DetectedChange[];
+}
+
+export interface ChangeSetListResponse {
+  facility_id: string;
+  items: ChangeSet[];
+  limit: number;
+  offset: number;
+}
+
+export type VerificationJobStatusValue =
+  | "pending"
+  | "running"
+  | "verified"
+  | "mismatch"
+  | "insufficient_evidence"
+  | "failed"
+  | "cancelled";
+export type VerificationTriggerValue =
+  | "change_detected"
+  | "manual"
+  | "monitoring";
+
+export interface VerificationResult {
+  id: string;
+  job_id: string;
+  facility_id: string;
+  hospital_snapshot_id: string | null;
+  website_crawl_run_id: string | null;
+  status: "match" | "mismatch" | "insufficient_evidence" | "error";
+  summary: string | null;
+  compared_at: string;
+  evidence_json: Record<string, unknown>;
+  provenance_json: Record<string, unknown>;
+}
+
+export interface VerificationEvidenceCheck {
+  path: string;
+  change_type: string;
+  entity_name: string;
+  field: string;
+  status: "match" | "mismatch" | "insufficient_evidence";
+  hospital_value: unknown;
+  website_value: unknown;
+  detail: string;
+}
+
+export interface VerificationJob {
+  id: string;
+  facility_id: string;
+  integration_id: string | null;
+  change_set_id: string | null;
+  snapshot_id: string | null;
+  target_ref: string;
+  trigger_type: VerificationTriggerValue;
+  status: VerificationJobStatusValue;
+  attempt_count: number;
+  max_attempts: number;
+  scheduled_for: string;
+  started_at: string | null;
+  finished_at: string | null;
+  last_error_code: string | null;
+  last_error_message: string | null;
+  created_at: string;
+  result: VerificationResult | null;
+}
+
+export interface JobListResponse {
+  facility_id: string;
+  items: VerificationJob[];
+  limit: number;
+  offset: number;
+}
+
+export interface ManualJobResponse {
+  verification_job: VerificationJob | null;
+  created: boolean;
+  reason: string | null;
+}
+
+export interface CaptureResponse {
+  snapshot: HospitalSnapshot;
+  change_set: ChangeSetDetail;
+  verification_job: VerificationJob | null;
+  job_created: boolean;
+  job_skip_reason: string | null;
+}
+
+export interface MonitoringSchedule {
+  id: string;
+  facility_id: string;
+  integration_id: string;
+  name: string;
+  interval_seconds: number;
+  enabled: boolean;
+  next_run_at: string | null;
+  last_enqueued_at: string | null;
+  last_status: string | null;
+}
+
+export interface ScheduleListResponse {
+  facility_id: string;
+  items: MonitoringSchedule[];
+}
+
+export interface ScheduleCreateRequest {
+  name: string;
+  integration_id: string;
+  interval_seconds: number;
+  enabled?: boolean;
+  target_ref?: string | null;
+}
+
+export interface ScheduleUpdateRequest {
+  name?: string;
+  interval_seconds?: number;
+  enabled?: boolean;
+  target_ref?: string | null;
+}
+
+export interface MonitoringExecution {
+  id: string;
+  schedule_id: string;
+  facility_id: string;
+  job_id: string | null;
+  status: "enqueued" | "skipped" | "error";
+  reason: string | null;
+  scheduled_for: string | null;
+  executed_at: string;
+}
+
+export interface ExecutionListResponse {
+  facility_id: string;
+  items: MonitoringExecution[];
+  limit: number;
+  offset: number;
+}
+
+export type ReconciliationResolution =
+  | "hospital_source_confirmed"
+  | "website_confirmed"
+  | "source_disagreement"
+  | "insufficient_evidence"
+  | "false_positive";
+export type ReconciliationCaseStatusValue =
+  | "open"
+  | "under_review"
+  | "resolved"
+  | "dismissed";
+
+export interface ReconciliationCase {
+  id: string;
+  facility_id: string;
+  verification_result_id: string | null;
+  detected_change_id: string | null;
+  status: ReconciliationCaseStatusValue;
+  resolution: ReconciliationResolution | null;
+  summary: string | null;
+  notes: string | null;
+  opened_at: string;
+  resolved_at: string | null;
+  resolved_by_label: string | null;
+  provenance_json: Record<string, unknown>;
+}
+
+export interface ReconciliationEvent {
+  id: string;
+  case_id: string;
+  from_status: ReconciliationCaseStatusValue | null;
+  to_status: ReconciliationCaseStatusValue;
+  actor_label: string | null;
+  note: string | null;
+  occurred_at: string;
+}
+
+export interface ReconciliationCaseDetail extends ReconciliationCase {
+  events: ReconciliationEvent[];
+}
+
+export interface CaseListResponse {
+  facility_id: string;
+  items: ReconciliationCase[];
+  limit: number;
+  offset: number;
+}
+
+export interface TransitionCaseRequest {
+  to_status: ReconciliationCaseStatusValue;
+  resolution?: ReconciliationResolution | null;
+  note?: string | null;
+  actor_label?: string | null;
+}

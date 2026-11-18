@@ -22,6 +22,7 @@ dependencies = [
 
 [project.scripts]
 hospital-extractor = "hospital_extractor.cli:main"
+medcompare-worker = "hospital_extractor.worker.cli:main"
 
 [dependency-groups]
 dev = [

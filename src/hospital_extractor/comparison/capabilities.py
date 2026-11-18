@@ -122,14 +122,75 @@ def assess_capabilities(environ: Mapping[str, str] | None = None) -> CapabilityR
             label="Authorized hospital-system integration",
             available=False,
             detail=(
-                "No live hospital API or database connection is configured. The internal "
-                "side of an audit is the MedCompare registry record, not the hospital's "
-                "own system."
+                "No live hospital API or database connection is configured. A capture "
+                "subsystem exists (versioned immutable snapshots, field-level change "
+                "detection, deterministic verification) and a clearly-labelled simulated "
+                "connector ships for demos and tests, but no real hospital is connected "
+                "by default. Live captures require an authorized integration with an "
+                "allowlisted base_url and environment-backed credentials."
             ),
             required_integration=(
                 "An authorized hospital API/database connection with scoped credentials, "
                 "access controls and an agreed data contract. Verification of service "
                 "fields against the hospital's own database depends on this integration."
+            ),
+        ),
+        CapabilityStatus(
+            key="hospital_source_capture",
+            label="Authorized hospital-source capture",
+            available=True,
+            detail=(
+                "Integrations are facility-scoped and fail closed unless explicitly "
+                "enabled with an allowlist and environment-backed credentials. Captures "
+                "are versioned, immutable and fingerprinted; detected changes are "
+                "persisted. The available connector is the clearly-labelled SIMULATED "
+                "mock hospital API used for tests and demos — no real hospital is "
+                "connected by default."
+            ),
+            implementation=(
+                "POST /api/v1/facilities/{facility_id}/integrations/{integration_id}/capture"
+            ),
+        ),
+        CapabilityStatus(
+            key="persistent_verification_jobs",
+            label="Persistent verification jobs",
+            available=True,
+            detail=(
+                "A separate worker claims due jobs (PostgreSQL FOR UPDATE SKIP LOCKED, "
+                "leases, bounded retries) and compares detected hospital changes against "
+                "SSRF-protected website evidence. Outcomes are match, mismatch or "
+                "insufficient_evidence with full provenance; absence of evidence is never "
+                "reported as a mismatch. Sensitive operations require the operator token."
+            ),
+            implementation="python -m hospital_extractor.worker",
+        ),
+        CapabilityStatus(
+            key="scheduled_monitoring",
+            label="Scheduled monitoring",
+            available=True,
+            detail=(
+                "Enabled schedules periodically run the capture pipeline and create "
+                "verification jobs for detected changes. Monitoring never crawls websites "
+                "itself; every scheduler decision is recorded immutably."
+            ),
+            implementation=(
+                "GET /api/v1/facilities/{facility_id}/monitoring/schedules and "
+                "POST /api/v1/facilities/{facility_id}/monitoring/schedules"
+            ),
+        ),
+        CapabilityStatus(
+            key="reconciliation_review",
+            label="Reconciliation and human review",
+            available=True,
+            detail=(
+                "Inconclusive or contradicted verification results open review cases in an "
+                "append-only workflow (open → under_review → resolved/dismissed) with an "
+                "immutable event trail. Resolution is a decision about the evidence; "
+                "nothing is published to the hospital."
+            ),
+            implementation=(
+                "GET /api/v1/facilities/{facility_id}/reconciliation-cases and "
+                "POST /api/v1/facilities/{facility_id}/reconciliation-cases/{case_id}/transitions"
             ),
         ),
         CapabilityStatus(
@@ -162,8 +223,10 @@ def assess_capabilities(environ: Mapping[str, str] | None = None) -> CapabilityR
             label="Asynchronous crawl jobs",
             available=False,
             detail=(
-                "There is no persistent job table, queue or worker, so no durable job "
-                "id, status polling or later result retrieval can be offered."
+                "There is no persistent queue for website crawling; website extraction "
+                "runs synchronously within the request. The persistent job queue covers "
+                "hospital-source verification (a separate worker process), not general "
+                "crawl jobs."
             ),
             required_integration=_JOB_STORE_INTEGRATION,
         ),

@@ -9,6 +9,9 @@
 
 import type {
   CapabilityReport,
+  CaseListResponse,
+  ChangeSetDetail,
+  ChangeSetListResponse,
   ComparisonRequest,
   ComparisonResponse,
   ConsistencyAuditRequest,
@@ -16,8 +19,23 @@ import type {
   CrawlRequest,
   CrawlResponse,
   CrawlRunDetail,
+  ExecutionListResponse,
+  FacilityIntegration,
   FacilityListResponse,
+  IntegrationCreateRequest,
+  IntegrationListResponse,
+  IntegrationUpdateRequest,
   InterpretResponse,
+  JobListResponse,
+  ManualJobResponse,
+  MonitoringSchedule,
+  ReconciliationCaseDetail,
+  CaptureResponse,
+  ScheduleListResponse,
+  ScheduleCreateRequest,
+  ScheduleUpdateRequest,
+  SnapshotListResponse,
+  TransitionCaseRequest,
 } from "./types";
 import {
   demoCapabilitiesData,
@@ -201,4 +219,228 @@ export function getCrawlRun(
     params.set("comparison_subject_id", options.comparison_subject_id);
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return request<CrawlRunDetail>(`/crawl/runs/${crawlRunId}${suffix}`);
+}
+
+function operatorUnavailable(): never {
+  throw new ApiError(
+    501,
+    {
+      error: "demo_mode",
+      message:
+        "The hospital integration workflow is not available in demonstration mode. " +
+        "Run the API server with a configured MEDCOMPARE_OPERATOR_API_KEY to configure and capture hospital sources.",
+    },
+  );
+}
+
+function authHeaders(
+  operatorToken?: string,
+): { headers?: Record<string, string> } {
+  return operatorToken
+    ? { headers: { Authorization: `Bearer ${operatorToken}` } }
+    : {};
+}
+
+export function listIntegrations(
+  facilityId: string,
+): Promise<IntegrationListResponse> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<IntegrationListResponse>(
+    `/facilities/${facilityId}/integrations`,
+  );
+}
+
+export function createIntegration(
+  facilityId: string,
+  body: IntegrationCreateRequest,
+  operatorToken: string,
+): Promise<FacilityIntegration> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<FacilityIntegration>(`/facilities/${facilityId}/integrations`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    ...authHeaders(operatorToken),
+  });
+}
+
+export function updateIntegration(
+  facilityId: string,
+  integrationId: string,
+  body: IntegrationUpdateRequest,
+  operatorToken: string,
+): Promise<FacilityIntegration> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<FacilityIntegration>(
+    `/facilities/${facilityId}/integrations/${integrationId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      ...authHeaders(operatorToken),
+    },
+  );
+}
+
+export function captureIntegration(
+  facilityId: string,
+  integrationId: string,
+  operatorToken: string,
+): Promise<CaptureResponse> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<CaptureResponse>(
+    `/facilities/${facilityId}/integrations/${integrationId}/capture`,
+    { method: "POST", ...authHeaders(operatorToken) },
+  );
+}
+
+export function listSnapshots(
+  facilityId: string,
+): Promise<SnapshotListResponse> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<SnapshotListResponse>(`/facilities/${facilityId}/snapshots`);
+}
+
+export function listChangeSets(
+  facilityId: string,
+): Promise<ChangeSetListResponse> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<ChangeSetListResponse>(`/facilities/${facilityId}/change-sets`);
+}
+
+export function getChangeSet(
+  facilityId: string,
+  changeSetId: string,
+): Promise<ChangeSetDetail> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<ChangeSetDetail>(
+    `/facilities/${facilityId}/change-sets/${changeSetId}`,
+  );
+}
+
+export function listVerificationJobs(
+  facilityId: string,
+): Promise<JobListResponse> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<JobListResponse>(
+    `/facilities/${facilityId}/verification-jobs`,
+  );
+}
+
+export function getVerificationJob(
+  facilityId: string,
+  jobId: string,
+): Promise<import("./types").VerificationJob> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<import("./types").VerificationJob>(
+    `/facilities/${facilityId}/verification-jobs/${jobId}`,
+  );
+}
+
+export function enqueueManualVerificationJob(
+  facilityId: string,
+  operatorToken: string,
+): Promise<ManualJobResponse> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<ManualJobResponse>(
+    `/facilities/${facilityId}/verification-jobs`,
+    { method: "POST", ...authHeaders(operatorToken) },
+  );
+}
+
+export function cancelVerificationJob(
+  facilityId: string,
+  jobId: string,
+  operatorToken: string,
+): Promise<import("./types").VerificationJob> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<import("./types").VerificationJob>(
+    `/facilities/${facilityId}/verification-jobs/${jobId}/cancel`,
+    { method: "POST", ...authHeaders(operatorToken) },
+  );
+}
+
+export function listMonitoringSchedules(
+  facilityId: string,
+): Promise<ScheduleListResponse> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<ScheduleListResponse>(
+    `/facilities/${facilityId}/monitoring/schedules`,
+  );
+}
+
+export function createMonitoringSchedule(
+  facilityId: string,
+  body: ScheduleCreateRequest,
+  operatorToken: string,
+): Promise<MonitoringSchedule> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<MonitoringSchedule>(
+    `/facilities/${facilityId}/monitoring/schedules`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+      ...authHeaders(operatorToken),
+    },
+  );
+}
+
+export function updateMonitoringSchedule(
+  facilityId: string,
+  scheduleId: string,
+  body: ScheduleUpdateRequest,
+  operatorToken: string,
+): Promise<MonitoringSchedule> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<MonitoringSchedule>(
+    `/facilities/${facilityId}/monitoring/schedules/${scheduleId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      ...authHeaders(operatorToken),
+    },
+  );
+}
+
+export function listMonitoringExecutions(
+  facilityId: string,
+): Promise<ExecutionListResponse> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<ExecutionListResponse>(
+    `/facilities/${facilityId}/monitoring/executions`,
+  );
+}
+
+export function listReconciliationCases(
+  facilityId: string,
+): Promise<CaseListResponse> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<CaseListResponse>(
+    `/facilities/${facilityId}/reconciliation-cases`,
+  );
+}
+
+export function getReconciliationCase(
+  facilityId: string,
+  caseId: string,
+): Promise<ReconciliationCaseDetail> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<ReconciliationCaseDetail>(
+    `/facilities/${facilityId}/reconciliation-cases/${caseId}`,
+  );
+}
+
+export function transitionReconciliationCase(
+  facilityId: string,
+  caseId: string,
+  body: TransitionCaseRequest,
+  operatorToken: string,
+): Promise<ReconciliationCaseDetail> {
+  if (isDemoMode()) return operatorUnavailable();
+  return request<ReconciliationCaseDetail>(
+    `/facilities/${facilityId}/reconciliation-cases/${caseId}/transitions`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+      ...authHeaders(operatorToken),
+    },
+  );
 }

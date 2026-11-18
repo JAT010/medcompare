@@ -93,3 +93,29 @@ from hospital_extractor.persistence.models_crawl import (  # noqa: E402,F401
     HospitalCrawlEvidence,
     HospitalCrawlRun,
 )
+
+# Integration and verification subsystem models (Milestone 4, unified architecture)
+from hospital_extractor.persistence.models_integration import (  # noqa: E402,F401
+    ChangeSetStatus,
+    DetectedChangeType,
+    HospitalDataSnapshot,
+    HospitalDetectedChange,
+    HospitalIntegrationEvent,
+    HospitalMonitoringExecution,
+    HospitalMonitoringSchedule,
+    HospitalReconciliationCase,
+    HospitalReconciliationCaseEvent,
+    HospitalSnapshotChangeSet,
+    HospitalSourceIntegration,
+    HospitalVerificationJob,
+    HospitalVerificationResult,
+    IntegrationAuthMode,
+    IntegrationStatus,
+    MonitoringExecutionStatus,
+    ReconciliationCaseStatus,
+    ReconciliationResolution,
+    SnapshotSourceKind,
+    VerificationJobStatus,
+    VerificationResultStatus,
+    VerificationTriggerType,
+)
